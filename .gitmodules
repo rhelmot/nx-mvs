@@ -1,0 +1,3 @@
+[submodule "mvs"]
+	path = mvs
+	url = https://github.com/exg/mvs

@@ -1,0 +1,63 @@
+from __future__ import annotations
+
+from pathlib import Path
+import unittest
+
+import networkx as nx
+
+from mvs import enumerate_maximum_convex_subgraphs
+
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
+def read_dimacs_graph(path: Path, *, weighted: bool) -> nx.DiGraph[int]:
+    graph: nx.DiGraph[int] = nx.DiGraph()
+    with path.open("r", encoding="utf-8") as handle:
+        for raw_line in handle:
+            line = raw_line.strip()
+            if not line:
+                continue
+            fields = line.split(" ")
+            if fields[0] == "p":
+                node_count = int(fields[2])
+                graph.graph["name"] = fields[4]
+                graph.graph["frequency"] = int(fields[5])
+                for node in range(node_count):
+                    graph.add_node(node, weight=1.0, forbidden=False)
+            elif fields[0] == "e":
+                graph.add_edge(int(fields[1]) - 1, int(fields[2]) - 1)
+            elif fields[0] == "n":
+                node = int(fields[1]) - 1
+                if weighted:
+                    graph.nodes[node]["weight"] = float(fields[2])
+                graph.nodes[node]["forbidden"] = fields[3] == "1"
+    return graph
+
+
+class TestMVS(unittest.TestCase):
+    def test_repository_benchmarks(self) -> None:
+        cases = [
+            ("mvs/data/DFG_crypt_Transform_entry.45.txt", 1, 1, 64),
+            ("mvs/data/DFG_crypt_Transform_entry.45.txt", 2, 2, 14),
+            ("mvs/data/DFG_hadamard_HadamardSAD8x8_for.body.1.txt", 18, 18, 1),
+            ("mvs/data/DFG_hadamard_HadamardSAD8x8_for.body.1.txt", 17, 17, 1),
+            ("mvs/data/DFG_hadamard_HadamardSAD8x8_for.body.1.txt", 16, 16, 1),
+            ("mvs/data/DFG_hadamard_HadamardSAD8x8_for.body.1.txt", 15, 15, 16),
+            ("mvs/data/DFG_hadamard_HadamardSAD8x8_for.body.1.txt", 14, 14, 8),
+        ]
+        for relative_path, max_inputs, max_outputs, expected_count in cases:
+            with self.subTest(path=relative_path, max_inputs=max_inputs, max_outputs=max_outputs):
+                graph = read_dimacs_graph(REPO_ROOT / relative_path, weighted=False)
+                result = list(
+                    enumerate_maximum_convex_subgraphs(
+                        graph,
+                        max_inputs,
+                        max_outputs,
+                    )
+                )
+                self.assertEqual(expected_count, len(result))
+
+
+if __name__ == "__main__":
+    unittest.main()
