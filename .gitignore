@@ -3,3 +3,7 @@
 *.so
 build
 dist
+
+# Nixtamal
+nix/tamal/.check_passed
+nix/tamal/.silo
