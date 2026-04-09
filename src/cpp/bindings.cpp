@@ -5,8 +5,11 @@
 
 #include "dfg.h"
 #include "mvs.h"
+#include "vs.h"
 
+#include <algorithm>
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <utility>
 #include <vector>
@@ -83,34 +86,39 @@ void validate_graph_input(const GraphInput &input)
     }
 }
 
+std::unique_ptr<DFG> make_dfg(const GraphInput &input)
+{
+    validate_graph_input(input);
+    auto dfg = std::make_unique<DFG>(input.name, input.num_nodes, input.frequency);
+    for (int node = 0; node < input.num_nodes; ++node) {
+        if (!input.weights.empty())
+            dfg->weight(node) = input.weights[static_cast<std::size_t>(node)];
+        if (!input.forbidden.empty() &&
+            input.forbidden[static_cast<std::size_t>(node)] != 0) {
+            dfg->set_forbidden(node);
+        }
+    }
+    for (const auto &[source, target] : input.edges)
+        dfg->add_edge(source, target);
+    dfg->index();
+    return dfg;
+}
+
 SolveResult solve_graph_input(const GraphInput &input,
                               int max_num_inputs,
                               int max_num_outputs,
                               const std::string &iteration_type,
                               int flags)
 {
-    validate_graph_input(input);
     if (max_num_inputs < 0 || max_num_outputs < 0)
         throw nb::value_error("I/O limits must be non-negative");
 
-    DFG dfg(input.name, input.num_nodes, input.frequency);
-    for (int node = 0; node < input.num_nodes; ++node) {
-        if (!input.weights.empty())
-            dfg.weight(node) = input.weights[static_cast<std::size_t>(node)];
-        if (!input.forbidden.empty() &&
-            input.forbidden[static_cast<std::size_t>(node)] != 0) {
-            dfg.set_forbidden(node);
-        }
-    }
-    for (const auto &[source, target] : input.edges)
-        dfg.add_edge(source, target);
-    dfg.index();
-
-    if (dfg.forbidden().size() == dfg.num_nodes())
+    auto dfg = make_dfg(input);
+    if (dfg->forbidden().size() == dfg->num_nodes())
         return {};
 
     StderrSilencer silence;
-    MVSFinder finder(&dfg);
+    MVSFinder finder(dfg.get());
     const auto output = finder.enumerate(
         max_num_inputs,
         max_num_outputs,
@@ -123,6 +131,30 @@ SolveResult solve_graph_input(const GraphInput &input,
     result.subgraphs.reserve(output.size());
     for (const auto &subgraph : output)
         result.subgraphs.push_back(to_vector(subgraph.nodes()));
+    return result;
+}
+
+SolveResult solve_all_graph_input(const GraphInput &input,
+                                  int max_num_inputs,
+                                  int max_num_outputs)
+{
+    if (max_num_inputs < 0 || max_num_outputs < 0)
+        throw nb::value_error("I/O limits must be non-negative");
+
+    auto dfg = make_dfg(input);
+    if (dfg->forbidden().size() == dfg->num_nodes())
+        return {};
+
+    SolveResult result;
+    StderrSilencer silence;
+    vs_enumerate(
+        *dfg,
+        max_num_inputs,
+        max_num_outputs,
+        [&result](const IOSubgraph &subgraph) {
+            result.max_weight = std::max(result.max_weight, subgraph.weight());
+            result.subgraphs.push_back(to_vector(subgraph.nodes()));
+        });
     return result;
 }
 
@@ -154,4 +186,10 @@ NB_MODULE(_native, m)
         nb::arg("max_num_outputs"),
         nb::arg("iteration_type") = "linear-rev",
         nb::arg("flags") = 0xff);
+    m.def(
+        "solve_all_graph_input",
+        &solve_all_graph_input,
+        nb::arg("graph_input"),
+        nb::arg("max_num_inputs"),
+        nb::arg("max_num_outputs"));
 }

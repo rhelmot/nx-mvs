@@ -22,3 +22,10 @@ def solve_graph_input(
     iteration_type: str = "linear-rev",
     flags: int = 0xFF,
 ) -> SolveResult: ...
+
+
+def solve_all_graph_input(
+    graph_input: GraphInput,
+    max_num_inputs: int,
+    max_num_outputs: int,
+) -> SolveResult: ...

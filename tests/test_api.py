@@ -5,7 +5,7 @@ import unittest
 
 import networkx as nx
 
-from mvs import enumerate_maximum_convex_subgraphs
+from mvs import enumerate_convex_subgraphs, enumerate_maximum_convex_subgraphs
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -36,6 +36,30 @@ def read_dimacs_graph(path: Path, *, weighted: bool) -> nx.DiGraph[int]:
 
 
 class TestMVS(unittest.TestCase):
+    def test_exhaustive_enumeration_returns_non_maximum_subgraphs(self) -> None:
+        graph = nx.DiGraph()
+        graph.add_node("src", forbidden=True)
+        graph.add_node("a")
+        graph.add_node("b")
+        graph.add_node("sink", forbidden=True)
+        graph.add_edges_from(
+            [
+                ("src", "a"),
+                ("a", "b"),
+                ("b", "sink"),
+            ]
+        )
+
+        result = {frozenset(nodes) for nodes in enumerate_convex_subgraphs(graph, 1, 1)}
+        self.assertSetEqual(
+            {
+                frozenset({"a"}),
+                frozenset({"b"}),
+                frozenset({"a", "b"}),
+            },
+            result,
+        )
+
     def test_repository_benchmarks(self) -> None:
         cases = [
             ("mvs/data/DFG_crypt_Transform_entry.45.txt", 1, 1, 64),
