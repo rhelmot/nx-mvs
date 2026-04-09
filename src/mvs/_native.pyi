@@ -15,6 +15,12 @@ class SolveResult:
     subgraphs: list[list[int]]
 
 
+class ExhaustiveSubgraphIterator:
+    def __iter__(self) -> ExhaustiveSubgraphIterator: ...
+    def __next__(self) -> list[int]: ...
+    def close(self) -> None: ...
+
+
 def solve_graph_input(
     graph_input: GraphInput,
     max_num_inputs: int,
@@ -29,3 +35,11 @@ def solve_all_graph_input(
     max_num_inputs: int,
     max_num_outputs: int,
 ) -> SolveResult: ...
+
+
+def iter_all_graph_input(
+    graph_input: GraphInput,
+    max_num_inputs: int,
+    max_num_outputs: int,
+    max_queue_size: int = 128,
+) -> ExhaustiveSubgraphIterator: ...

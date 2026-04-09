@@ -1,5 +1,6 @@
 #include <nanobind/nanobind.h>
 #include <nanobind/stl/pair.h>
+#include <nanobind/stl/shared_ptr.h>
 #include <nanobind/stl/string.h>
 #include <nanobind/stl/vector.h>
 
@@ -8,9 +9,14 @@
 #include "vs.h"
 
 #include <algorithm>
+#include <condition_variable>
 #include <cstdint>
+#include <deque>
+#include <exception>
 #include <memory>
+#include <mutex>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -49,6 +55,9 @@ public:
 private:
     NullBuffer null_buffer_;
     std::streambuf *previous_;
+};
+
+class EnumerationStopped : public std::exception {
 };
 
 MVSFinder::IterType parse_iteration_type(const std::string &iteration_type)
@@ -104,6 +113,120 @@ std::unique_ptr<DFG> make_dfg(const GraphInput &input)
     return dfg;
 }
 
+class ExhaustiveSubgraphIterator {
+public:
+    ExhaustiveSubgraphIterator(const GraphInput &input,
+                               int max_num_inputs,
+                               int max_num_outputs,
+                               std::size_t max_queue_size)
+        : dfg_(make_dfg(input))
+        , max_num_inputs_(max_num_inputs)
+        , max_num_outputs_(max_num_outputs)
+        , max_queue_size_(max_queue_size)
+    {
+        if (max_num_inputs_ < 0 || max_num_outputs_ < 0)
+            throw nb::value_error("I/O limits must be non-negative");
+        if (max_queue_size_ == 0)
+            throw nb::value_error("max_queue_size must be positive");
+        if (dfg_->forbidden().size() == dfg_->num_nodes()) {
+            done_ = true;
+            return;
+        }
+
+        worker_ = std::thread(&ExhaustiveSubgraphIterator::run, this);
+    }
+
+    ~ExhaustiveSubgraphIterator() { close(); }
+
+    ExhaustiveSubgraphIterator(const ExhaustiveSubgraphIterator &) = delete;
+    ExhaustiveSubgraphIterator &operator=(const ExhaustiveSubgraphIterator &) = delete;
+
+    ExhaustiveSubgraphIterator &iter() { return *this; }
+
+    std::vector<int> next()
+    {
+        std::unique_lock<std::mutex> lock(mutex_);
+        while (queue_.empty() && !done_) {
+            {
+                nb::gil_scoped_release release;
+                cv_.wait(lock);
+            }
+        }
+
+        if (!queue_.empty()) {
+            std::vector<int> next_subgraph = std::move(queue_.front());
+            queue_.pop_front();
+            cv_.notify_all();
+            return next_subgraph;
+        }
+
+        if (worker_exception_ != nullptr)
+            std::rethrow_exception(worker_exception_);
+        throw nb::stop_iteration();
+    }
+
+    void close()
+    {
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            stop_requested_ = true;
+            cv_.notify_all();
+        }
+        if (worker_.joinable())
+            worker_.join();
+    }
+
+private:
+    void push_result(std::vector<int> subgraph)
+    {
+        std::unique_lock<std::mutex> lock(mutex_);
+        while (queue_.size() >= max_queue_size_ && !stop_requested_) {
+            cv_.wait(lock);
+        }
+        if (stop_requested_)
+            throw EnumerationStopped();
+
+        queue_.push_back(std::move(subgraph));
+        cv_.notify_all();
+    }
+
+    void run()
+    {
+        try {
+            StderrSilencer silence;
+            vs_enumerate(
+                *dfg_,
+                max_num_inputs_,
+                max_num_outputs_,
+                [this](const IOSubgraph &subgraph) {
+                    push_result(to_vector(subgraph.nodes()));
+                });
+        } catch (const EnumerationStopped &) {
+        } catch (...) {
+            std::lock_guard<std::mutex> lock(mutex_);
+            worker_exception_ = std::current_exception();
+        }
+
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            done_ = true;
+        }
+        cv_.notify_all();
+    }
+
+    std::unique_ptr<DFG> dfg_;
+    int max_num_inputs_;
+    int max_num_outputs_;
+    std::size_t max_queue_size_;
+    std::deque<std::vector<int>> queue_;
+    std::mutex mutex_;
+    std::condition_variable cv_;
+    std::thread worker_;
+    std::exception_ptr worker_exception_;
+    bool done_ = false;
+    bool stop_requested_ = false;
+};
+
 SolveResult solve_graph_input(const GraphInput &input,
                               int max_num_inputs,
                               int max_num_outputs,
@@ -158,6 +281,16 @@ SolveResult solve_all_graph_input(const GraphInput &input,
     return result;
 }
 
+std::shared_ptr<ExhaustiveSubgraphIterator> iter_all_graph_input(
+    const GraphInput &input,
+    int max_num_inputs,
+    int max_num_outputs,
+    std::size_t max_queue_size)
+{
+    return std::make_shared<ExhaustiveSubgraphIterator>(
+        input, max_num_inputs, max_num_outputs, max_queue_size);
+}
+
 }
 
 NB_MODULE(_native, m)
@@ -178,6 +311,11 @@ NB_MODULE(_native, m)
         .def_rw("max_weight", &SolveResult::max_weight)
         .def_rw("subgraphs", &SolveResult::subgraphs);
 
+    nb::class_<ExhaustiveSubgraphIterator>(m, "ExhaustiveSubgraphIterator")
+        .def("__iter__", &ExhaustiveSubgraphIterator::iter, nb::rv_policy::reference_internal)
+        .def("__next__", &ExhaustiveSubgraphIterator::next)
+        .def("close", &ExhaustiveSubgraphIterator::close);
+
     m.def(
         "solve_graph_input",
         &solve_graph_input,
@@ -192,4 +330,11 @@ NB_MODULE(_native, m)
         nb::arg("graph_input"),
         nb::arg("max_num_inputs"),
         nb::arg("max_num_outputs"));
+    m.def(
+        "iter_all_graph_input",
+        &iter_all_graph_input,
+        nb::arg("graph_input"),
+        nb::arg("max_num_inputs"),
+        nb::arg("max_num_outputs"),
+        nb::arg("max_queue_size") = 128);
 }

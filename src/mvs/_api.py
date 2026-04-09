@@ -5,7 +5,7 @@ from typing import Literal, TypeVar
 
 import networkx as nx
 
-from ._native import GraphInput, solve_all_graph_input, solve_graph_input
+from ._native import GraphInput, iter_all_graph_input, solve_graph_input
 
 
 NodeT = TypeVar("NodeT", bound=Hashable)
@@ -96,6 +96,7 @@ def enumerate_convex_subgraphs(
     weight_attr: str = "weight",
     forbidden_attr: str = "forbidden",
     ordering: Literal["default", "sort", "toposort"] = "default",
+    max_queue_size: int = 128,
 ) -> Iterator[set[NodeT]]:
     """
     Enumerate all directed convex subgraphs of a DAG under I/O constraints.
@@ -110,5 +111,12 @@ def enumerate_convex_subgraphs(
         forbidden_attr=forbidden_attr,
         ordering=ordering,
     )
-    result = solve_all_graph_input(payload, max_num_inputs, max_num_outputs)
-    return ({node_order[index] for index in subgraph} for subgraph in result.subgraphs)
+    return (
+        {node_order[index] for index in subgraph}
+        for subgraph in iter_all_graph_input(
+            payload,
+            max_num_inputs,
+            max_num_outputs,
+            max_queue_size=max_queue_size,
+        )
+    )
