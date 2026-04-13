@@ -1,19 +1,22 @@
 {
     lib,
-    python3,
+    buildPythonPackage,
     cmake,
     ninja,
     nlohmann_json,
+    scikit-build-core,
+    nanobind,
+    networkx,
 }:
-python3.pkgs.buildPythonPackage {
+buildPythonPackage {
     pname = "nx-mvs";
     version = "0.1.0";
     src = ./..;
     pyproject = true;
     dontConfigure = true;
 
-    build-system = with python3.pkgs; [ scikit-build-core nanobind ];
-    dependencies = with python3.pkgs; [ networkx ];
+    build-system = [ scikit-build-core nanobind ];
+    dependencies = [ networkx ];
     nativeBuildInputs = [
         cmake
         ninja
