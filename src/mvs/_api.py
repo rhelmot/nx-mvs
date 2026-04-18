@@ -17,6 +17,7 @@ def graph_to_input(
     weighted: bool = False,
     weight_attr: str = "weight",
     forbidden_attr: str = "forbidden",
+    forbid_sources_and_sinks: bool = True,
     ordering: Literal["default", "sort", "toposort"] = "default",
     name: str | None = None,
 ) -> tuple[GraphInput, tuple[NodeT, ...]]:  # second tuple item is the reverse mapping for the ints
@@ -44,6 +45,7 @@ def graph_to_input(
         float(graph.nodes[node].get(weight_attr, 1.0)) if weighted else 1.0
         for node in node_order
     ]
+    payload.forbid_sources_and_sinks = forbid_sources_and_sinks
     payload.forbidden = [
         1 if bool(graph.nodes[node].get(forbidden_attr, False)) else 0
         for node in node_order
@@ -59,6 +61,7 @@ def enumerate_maximum_convex_subgraphs(
     weighted: bool = False,
     weight_attr: str = "weight",
     forbidden_attr: str = "forbidden",
+    forbid_sources_and_sinks: bool = True,
     iteration_type: str = "linear-rev",
     ordering: Literal["default", "sort", "toposort"] = "default",
     flags: int = 0xFF,
@@ -75,6 +78,7 @@ def enumerate_maximum_convex_subgraphs(
         weighted=weighted,
         weight_attr=weight_attr,
         forbidden_attr=forbidden_attr,
+        forbid_sources_and_sinks=forbid_sources_and_sinks,
         ordering=ordering,
     )
     result = solve_graph_input(
@@ -95,6 +99,7 @@ def enumerate_convex_subgraphs(
     weighted: bool = False,
     weight_attr: str = "weight",
     forbidden_attr: str = "forbidden",
+    forbid_sources_and_sinks: bool = True,
     ordering: Literal["default", "sort", "toposort"] = "default",
     max_queue_size: int = 128,
 ) -> Iterator[set[NodeT]]:
@@ -109,6 +114,7 @@ def enumerate_convex_subgraphs(
         weighted=weighted,
         weight_attr=weight_attr,
         forbidden_attr=forbidden_attr,
+        forbid_sources_and_sinks=forbid_sources_and_sinks,
         ordering=ordering,
     )
     return (

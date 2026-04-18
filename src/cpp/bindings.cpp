@@ -29,6 +29,7 @@ struct GraphInput {
     std::vector<double> weights;
     std::vector<uint8_t> forbidden;
     int frequency = 0;
+    bool forbid_sources_and_sinks = true;
 };
 
 struct SolveResult {
@@ -98,7 +99,11 @@ void validate_graph_input(const GraphInput &input)
 std::unique_ptr<DFG> make_dfg(const GraphInput &input)
 {
     validate_graph_input(input);
-    auto dfg = std::make_unique<DFG>(input.name, input.num_nodes, input.frequency);
+    auto dfg = std::make_unique<DFG>(
+        input.name,
+        input.num_nodes,
+        input.frequency,
+        input.forbid_sources_and_sinks);
     for (int node = 0; node < input.num_nodes; ++node) {
         if (!input.weights.empty())
             dfg->weight(node) = input.weights[static_cast<std::size_t>(node)];
@@ -304,7 +309,8 @@ NB_MODULE(_native, m)
         .def_rw("edges", &GraphInput::edges)
         .def_rw("weights", &GraphInput::weights)
         .def_rw("forbidden", &GraphInput::forbidden)
-        .def_rw("frequency", &GraphInput::frequency);
+        .def_rw("frequency", &GraphInput::frequency)
+        .def_rw("forbid_sources_and_sinks", &GraphInput::forbid_sources_and_sinks);
 
     nb::class_<SolveResult>(m, "SolveResult")
         .def(nb::init<>())

@@ -36,6 +36,52 @@ def read_dimacs_graph(path: Path, *, weighted: bool) -> nx.DiGraph[int]:
 
 
 class TestMVS(unittest.TestCase):
+    def test_sources_and_sinks_are_forbidden_by_default(self) -> None:
+        graph = nx.DiGraph()
+        graph.add_node("sink", forbidden=True)
+        graph.add_edges_from(
+            [
+                ("src", "mid"),
+                ("mid", "sink"),
+            ]
+        )
+
+        result = {frozenset(nodes) for nodes in enumerate_convex_subgraphs(graph, 1, 1)}
+        self.assertSetEqual(
+            {
+                frozenset({"src"}),
+                frozenset({"mid"}),
+            },
+            result,
+        )
+
+    def test_sources_and_sinks_can_be_opted_in(self) -> None:
+        graph = nx.DiGraph()
+        graph.add_node("sink", forbidden=True)
+        graph.add_edges_from(
+            [
+                ("src", "mid"),
+                ("mid", "sink"),
+            ]
+        )
+
+        result = {
+            frozenset(nodes)
+            for nodes in enumerate_convex_subgraphs(
+                graph,
+                1,
+                1,
+                forbid_sources_and_sinks=False,
+            )
+        }
+        self.assertSetEqual(
+            {
+                frozenset({"mid"}),
+                frozenset({"src", "mid"}),
+            },
+            result,
+        )
+
     def test_exhaustive_enumeration_returns_non_maximum_subgraphs(self) -> None:
         graph = nx.DiGraph()
         graph.add_node("src", forbidden=True)

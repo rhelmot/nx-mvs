@@ -8,6 +8,7 @@ class GraphInput:
     weights: list[float]
     forbidden: list[int]
     frequency: int
+    forbid_sources_and_sinks: bool
 
 
 class SolveResult:
