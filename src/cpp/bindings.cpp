@@ -96,9 +96,61 @@ void validate_graph_input(const GraphInput &input)
     }
 }
 
-std::unique_ptr<DFG> make_dfg(const GraphInput &input)
+std::unique_ptr<DFG> make_dfg(const GraphInput &input,
+                              bool materialize_opt_in_terminals = false)
 {
     validate_graph_input(input);
+    if (materialize_opt_in_terminals && !input.forbid_sources_and_sinks) {
+        std::vector<uint8_t> has_in(static_cast<std::size_t>(input.num_nodes), 0);
+        std::vector<uint8_t> has_out(static_cast<std::size_t>(input.num_nodes), 0);
+        for (const auto &[source, target] : input.edges) {
+            has_out[static_cast<std::size_t>(source)] = 1;
+            has_in[static_cast<std::size_t>(target)] = 1;
+        }
+
+        int extra_nodes = 0;
+        for (int node = 0; node < input.num_nodes; ++node) {
+            if (has_in[static_cast<std::size_t>(node)] == 0)
+                ++extra_nodes;
+            if (has_out[static_cast<std::size_t>(node)] == 0)
+                ++extra_nodes;
+        }
+
+        auto dfg = std::make_unique<DFG>(
+            input.name,
+            input.num_nodes + extra_nodes,
+            input.frequency,
+            true);
+        for (int node = 0; node < input.num_nodes; ++node) {
+            if (!input.weights.empty())
+                dfg->weight(node) = input.weights[static_cast<std::size_t>(node)];
+            if (!input.forbidden.empty() &&
+                input.forbidden[static_cast<std::size_t>(node)] != 0) {
+                dfg->set_forbidden(node);
+            }
+        }
+        for (const auto &[source, target] : input.edges)
+            dfg->add_edge(source, target);
+
+        int next_node = input.num_nodes;
+        for (int node = 0; node < input.num_nodes; ++node) {
+            if (has_in[static_cast<std::size_t>(node)] == 0) {
+                dfg->weight(next_node) = 0;
+                dfg->set_forbidden(next_node);
+                dfg->add_edge(next_node, node);
+                ++next_node;
+            }
+            if (has_out[static_cast<std::size_t>(node)] == 0) {
+                dfg->weight(next_node) = 0;
+                dfg->set_forbidden(next_node);
+                dfg->add_edge(node, next_node);
+                ++next_node;
+            }
+        }
+        dfg->index();
+        return dfg;
+    }
+
     auto dfg = std::make_unique<DFG>(
         input.name,
         input.num_nodes,
@@ -241,7 +293,7 @@ SolveResult solve_graph_input(const GraphInput &input,
     if (max_num_inputs < 0 || max_num_outputs < 0)
         throw nb::value_error("I/O limits must be non-negative");
 
-    auto dfg = make_dfg(input);
+    auto dfg = make_dfg(input, true);
     if (dfg->forbidden().size() == dfg->num_nodes())
         return {};
 
