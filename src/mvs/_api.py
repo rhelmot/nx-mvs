@@ -18,7 +18,7 @@ def graph_to_input(
     weight_attr: str = "weight",
     forbidden_attr: str = "forbidden",
     forbid_sources_and_sinks: bool = True,
-    ordering: Literal["default", "sort", "toposort"] = "default",
+    ordering: Literal["default", "sort", "toposort"] = "toposort",
     name: str | None = None,
 ) -> tuple[GraphInput, tuple[NodeT, ...]]:  # second tuple item is the reverse mapping for the ints
     if not nx.is_directed_acyclic_graph(graph):
@@ -63,7 +63,7 @@ def enumerate_maximum_convex_subgraphs(
     forbidden_attr: str = "forbidden",
     forbid_sources_and_sinks: bool = True,
     iteration_type: str = "linear-rev",
-    ordering: Literal["default", "sort", "toposort"] = "default",
+    ordering: Literal["default", "sort", "toposort"] = "toposort",
     flags: int = 0xFF,
 ) -> Iterator[set[NodeT]]:
     """
@@ -100,7 +100,7 @@ def enumerate_convex_subgraphs(
     weight_attr: str = "weight",
     forbidden_attr: str = "forbidden",
     forbid_sources_and_sinks: bool = True,
-    ordering: Literal["default", "sort", "toposort"] = "default",
+    ordering: Literal["default", "sort", "toposort"] = "toposort",
     max_queue_size: int = 128,
 ) -> Iterator[set[NodeT]]:
     """
