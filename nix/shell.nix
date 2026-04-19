@@ -11,6 +11,7 @@ mkShell {
         (python3.withPackages (p: with p; [
             networkx
             pytest
+            pydot
         ]))
     ];
     nativeBuildInputs = [
