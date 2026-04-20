@@ -12,6 +12,11 @@ mkShell {
             networkx
             pytest
             pydot
+            build
+            scikit-build-core
+            nanobind
+            cmake
+            ninja
         ]))
     ];
     nativeBuildInputs = [

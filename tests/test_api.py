@@ -74,6 +74,32 @@ class TestMVS(unittest.TestCase):
                 1,
                 1,
                 forbid_sources_and_sinks=False,
+                allow_zero_outputs=True,
+            )
+        }
+        self.assertSetEqual({frozenset({"mid", "sink"})}, result)
+
+    def test_maximum_enumeration_can_include_zero_outputs_when_enabled(self) -> None:
+        graph = nx.DiGraph()
+        graph.add_node("src", forbidden=True)
+        graph.add_node("mid", weight=1.0)
+        graph.add_node("sink", weight=5.0)
+        graph.add_edges_from(
+            [
+                ("src", "mid"),
+                ("mid", "sink"),
+            ]
+        )
+
+        result = {
+            frozenset(nodes)
+            for nodes in enumerate_maximum_convex_subgraphs(
+                graph,
+                1,
+                1,
+                weighted=True,
+                forbid_sources_and_sinks=False,
+                allow_zero_outputs=True,
             )
         }
         self.assertSetEqual({frozenset({"mid", "sink"})}, result)
@@ -118,11 +144,44 @@ class TestMVS(unittest.TestCase):
         }
         self.assertSetEqual(
             {
+                frozenset({"src"}),
                 frozenset({"mid"}),
                 frozenset({"src", "mid"}),
             },
             result,
         )
+
+    def test_exhaustive_enumeration_can_include_zero_outputs_when_enabled(self) -> None:
+        graph = nx.DiGraph()
+        graph.add_node("src", forbidden=True)
+        graph.add_edges_from(
+            [
+                ("src", "mid"),
+                ("mid", "sink"),
+            ]
+        )
+
+        without_zero_outputs = {
+            frozenset(nodes)
+            for nodes in enumerate_convex_subgraphs(
+                graph,
+                1,
+                1,
+                forbid_sources_and_sinks=False,
+            )
+        }
+        with_zero_outputs = {
+            frozenset(nodes)
+            for nodes in enumerate_convex_subgraphs(
+                graph,
+                1,
+                1,
+                forbid_sources_and_sinks=False,
+                allow_zero_outputs=True,
+            )
+        }
+        self.assertNotIn(frozenset({"mid", "sink"}), without_zero_outputs)
+        self.assertIn(frozenset({"mid", "sink"}), with_zero_outputs)
 
     def test_exhaustive_enumeration_returns_non_maximum_subgraphs(self) -> None:
         graph = nx.DiGraph()
