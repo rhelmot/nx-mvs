@@ -151,6 +151,25 @@ class TestMVS(unittest.TestCase):
             result,
         )
 
+    def test_exhaustive_enumeration_works_without_explicit_forbidden_nodes(self) -> None:
+        graph = nx.DiGraph()
+        graph.add_edges_from(
+            [
+                ("a", "b"),
+            ]
+        )
+
+        result = {
+            frozenset(nodes)
+            for nodes in enumerate_convex_subgraphs(
+                graph,
+                1,
+                1,
+                forbid_sources_and_sinks=False,
+            )
+        }
+        self.assertIn(frozenset({"a"}), result)
+
     def test_exhaustive_enumeration_can_include_zero_outputs_when_enabled(self) -> None:
         graph = nx.DiGraph()
         graph.add_node("src", forbidden=True)
