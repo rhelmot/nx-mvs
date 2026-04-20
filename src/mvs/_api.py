@@ -160,31 +160,59 @@ def enumerate_convex_subgraphs(
         ordering=ordering,
     )
 
-    def iter_results() -> Iterator[set[NodeT]]:
+    return _iter_convex_subgraphs(
+        graph,
+        payload,
+        node_order,
+        max_num_inputs=max_num_inputs,
+        max_num_outputs=max_num_outputs,
+        weighted=weighted,
+        weight_attr=weight_attr,
+        forbidden_attr=forbidden_attr,
+        forbid_sources_and_sinks=forbid_sources_and_sinks,
+        allow_zero_outputs=allow_zero_outputs,
+        ordering=ordering,
+        max_queue_size=max_queue_size,
+    )
+
+
+def _iter_convex_subgraphs(
+    graph: nx.DiGraph[NodeT],
+    payload: GraphInput,
+    node_order: tuple[NodeT, ...],
+    *,
+    max_num_inputs: int,
+    max_num_outputs: int,
+    weighted: bool,
+    weight_attr: str,
+    forbidden_attr: str,
+    forbid_sources_and_sinks: bool,
+    allow_zero_outputs: bool,
+    ordering: Literal["default", "sort", "toposort"],
+    max_queue_size: int,
+) -> Iterator[set[NodeT]]:
+    for subgraph in iter_all_graph_input(
+        payload,
+        max_num_inputs,
+        max_num_outputs,
+        max_queue_size=max_queue_size,
+    ):
+        yield {node_order[index] for index in subgraph}
+
+    if allow_zero_outputs:
+        reversed_graph = graph.reverse(copy=True)
+        reversed_payload, reversed_node_order = graph_to_input(
+            reversed_graph,
+            weighted=weighted,
+            weight_attr=weight_attr,
+            forbidden_attr=forbidden_attr,
+            forbid_sources_and_sinks=forbid_sources_and_sinks,
+            ordering=ordering,
+        )
         for subgraph in iter_all_graph_input(
-            payload,
+            reversed_payload,
+            0,
             max_num_inputs,
-            max_num_outputs,
             max_queue_size=max_queue_size,
         ):
-            yield {node_order[index] for index in subgraph}
-
-        if allow_zero_outputs:
-            reversed_graph = graph.reverse(copy=True)
-            reversed_payload, reversed_node_order = graph_to_input(
-                reversed_graph,
-                weighted=weighted,
-                weight_attr=weight_attr,
-                forbidden_attr=forbidden_attr,
-                forbid_sources_and_sinks=forbid_sources_and_sinks,
-                ordering=ordering,
-            )
-            for subgraph in iter_all_graph_input(
-                reversed_payload,
-                0,
-                max_num_inputs,
-                max_queue_size=max_queue_size,
-            ):
-                yield {reversed_node_order[index] for index in subgraph}
-
-    return iter_results()
+            yield {reversed_node_order[index] for index in subgraph}
