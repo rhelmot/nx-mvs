@@ -315,7 +315,7 @@ class TestMVS(unittest.TestCase):
 
         self.assertIn(frozenset({"a", "b", "c"}), result)
 
-    def test_connected_only_zero_output_excludes_disconnected_single_component(
+    def test_connected_only_zero_output_connects_through_inputs(
         self,
     ) -> None:
         graph = nx.DiGraph()
@@ -350,11 +350,11 @@ class TestMVS(unittest.TestCase):
         }
 
         self.assertIn(frozenset({"a", "b"}), unconstrained)
-        self.assertNotIn(frozenset({"a", "b"}), connected)
+        self.assertIn(frozenset({"a", "b"}), connected)
         self.assertIn(frozenset({"a"}), connected)
         self.assertIn(frozenset({"b"}), connected)
 
-    def test_connected_only_zero_output_maximum_excludes_disconnected_single_component(
+    def test_connected_only_zero_output_maximum_connects_through_inputs(
         self,
     ) -> None:
         graph = nx.DiGraph()
@@ -393,7 +393,7 @@ class TestMVS(unittest.TestCase):
         }
 
         self.assertSetEqual({frozenset({"a", "b"})}, unconstrained)
-        self.assertSetEqual({frozenset({"a"}), frozenset({"b"})}, connected)
+        self.assertSetEqual({frozenset({"a", "b"})}, connected)
 
     def test_exhaustive_enumeration_returns_non_maximum_subgraphs(self) -> None:
         graph = nx.DiGraph()
