@@ -26,6 +26,7 @@ def solve_graph_input(
     graph_input: GraphInput,
     max_num_inputs: int,
     max_num_outputs: int,
+    max_subgraph_size: int = -1,
     iteration_type: str = "linear-rev",
     flags: int = 0xFF,
 ) -> SolveResult: ...
@@ -35,6 +36,7 @@ def solve_all_graph_input(
     graph_input: GraphInput,
     max_num_inputs: int,
     max_num_outputs: int,
+    max_subgraph_size: int = -1,
     connected_only: bool = False,
 ) -> SolveResult: ...
 
@@ -43,6 +45,7 @@ def iter_all_graph_input(
     graph_input: GraphInput,
     max_num_inputs: int,
     max_num_outputs: int,
+    max_subgraph_size: int = -1,
     max_queue_size: int = 128,
     connected_only: bool = False,
 ) -> ExhaustiveSubgraphIterator: ...

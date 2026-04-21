@@ -71,6 +71,7 @@ def enumerate_maximum_convex_subgraphs(
     max_num_inputs: int,
     max_num_outputs: int,
     *,
+    max_subgraph_size: int | None = None,
     weighted: bool = False,
     weight_attr: str = "weight",
     forbidden_attr: str = "forbidden",
@@ -88,6 +89,10 @@ def enumerate_maximum_convex_subgraphs(
     Automatic Identification of Custom Instructions"
     """
 
+    native_max_subgraph_size = -1 if max_subgraph_size is None else max_subgraph_size
+    if native_max_subgraph_size < -1:
+        raise ValueError("max_subgraph_size must be non-negative or None")
+
     if max_num_outputs <= 1:
         best_weight = float("-inf")
         best_subgraphs: list[set[NodeT]] = []
@@ -95,6 +100,7 @@ def enumerate_maximum_convex_subgraphs(
             graph,
             max_num_inputs,
             max_num_outputs,
+            max_subgraph_size=max_subgraph_size,
             weighted=weighted,
             weight_attr=weight_attr,
             forbidden_attr=forbidden_attr,
@@ -132,6 +138,7 @@ def enumerate_maximum_convex_subgraphs(
                 payload,
                 max_num_inputs,
                 max_num_outputs,
+                native_max_subgraph_size,
                 iteration_type=iteration_type,
                 flags=flags,
             )
@@ -162,6 +169,7 @@ def enumerate_maximum_convex_subgraphs(
         payload,
         max_num_inputs,
         max_num_outputs,
+        native_max_subgraph_size,
         iteration_type=iteration_type,
         flags=flags,
     )
@@ -173,6 +181,7 @@ def enumerate_convex_subgraphs(
     max_num_inputs: int,
     max_num_outputs: int,
     *,
+    max_subgraph_size: int | None = None,
     weighted: bool = False,
     weight_attr: str = "weight",
     forbidden_attr: str = "forbidden",
@@ -187,6 +196,10 @@ def enumerate_convex_subgraphs(
 
     This uses the upstream exhaustive enumerator rather than the maximum-only search.
     """
+
+    native_max_subgraph_size = -1 if max_subgraph_size is None else max_subgraph_size
+    if native_max_subgraph_size < -1:
+        raise ValueError("max_subgraph_size must be non-negative or None")
 
     if connected_only:
         def iter_connected_results() -> Iterator[set[NodeT]]:
@@ -205,6 +218,7 @@ def enumerate_convex_subgraphs(
                     node_order,
                     max_num_inputs=max_num_inputs,
                     max_num_outputs=max_num_outputs,
+                    max_subgraph_size=native_max_subgraph_size,
                     weighted=weighted,
                     weight_attr=weight_attr,
                     forbidden_attr=forbidden_attr,
@@ -232,6 +246,7 @@ def enumerate_convex_subgraphs(
         node_order,
         max_num_inputs=max_num_inputs,
         max_num_outputs=max_num_outputs,
+        max_subgraph_size=native_max_subgraph_size,
         weighted=weighted,
         weight_attr=weight_attr,
         forbidden_attr=forbidden_attr,
@@ -250,6 +265,7 @@ def _iter_convex_subgraphs(
     *,
     max_num_inputs: int,
     max_num_outputs: int,
+    max_subgraph_size: int,
     weighted: bool,
     weight_attr: str,
     forbidden_attr: str,
@@ -263,6 +279,7 @@ def _iter_convex_subgraphs(
         payload,
         max_num_inputs,
         max_num_outputs,
+        max_subgraph_size,
         max_queue_size=max_queue_size,
         connected_only=connected_only,
     ):
@@ -273,6 +290,7 @@ def _iter_convex_subgraphs(
             payload,
             max_num_inputs,
             0,
+            max_subgraph_size,
             max_queue_size=max_queue_size,
             connected_only=connected_only,
         ):

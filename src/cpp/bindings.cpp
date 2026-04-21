@@ -175,16 +175,20 @@ public:
     ExhaustiveSubgraphIterator(const GraphInput &input,
                                int max_num_inputs,
                                int max_num_outputs,
+                               int max_subgraph_size,
                                std::size_t max_queue_size,
                                bool connected_only)
         : dfg_(make_dfg(input))
         , max_num_inputs_(max_num_inputs)
         , max_num_outputs_(max_num_outputs)
+        , max_subgraph_size_(max_subgraph_size)
         , max_queue_size_(max_queue_size)
         , connected_only_(connected_only)
     {
         if (max_num_inputs_ < 0 || max_num_outputs_ < 0)
             throw nb::value_error("I/O limits must be non-negative");
+        if (max_subgraph_size_ < -1)
+            throw nb::value_error("max_subgraph_size must be -1 or non-negative");
         if (max_queue_size_ == 0)
             throw nb::value_error("max_queue_size must be positive");
         if (dfg_->forbidden().size() == dfg_->num_nodes()) {
@@ -257,6 +261,7 @@ private:
                 *dfg_,
                 max_num_inputs_,
                 max_num_outputs_,
+                max_subgraph_size_,
                 [this](const IOSubgraph &subgraph) {
                     push_result(to_vector(subgraph.nodes()));
                 },
@@ -277,6 +282,7 @@ private:
     std::unique_ptr<DFG> dfg_;
     int max_num_inputs_;
     int max_num_outputs_;
+    int max_subgraph_size_;
     std::size_t max_queue_size_;
     bool connected_only_;
     std::deque<std::vector<int>> queue_;
@@ -291,11 +297,14 @@ private:
 SolveResult solve_graph_input(const GraphInput &input,
                               int max_num_inputs,
                               int max_num_outputs,
+                              int max_subgraph_size,
                               const std::string &iteration_type,
                               int flags)
 {
     if (max_num_inputs < 0 || max_num_outputs < 0)
         throw nb::value_error("I/O limits must be non-negative");
+    if (max_subgraph_size < -1)
+        throw nb::value_error("max_subgraph_size must be -1 or non-negative");
 
     auto dfg = make_dfg(input, true);
     if (dfg->forbidden().size() == dfg->num_nodes())
@@ -306,6 +315,7 @@ SolveResult solve_graph_input(const GraphInput &input,
     const auto output = finder.enumerate(
         max_num_inputs,
         max_num_outputs,
+        max_subgraph_size,
         parse_iteration_type(iteration_type),
         static_cast<uint8_t>(flags));
 
@@ -321,10 +331,13 @@ SolveResult solve_graph_input(const GraphInput &input,
 SolveResult solve_all_graph_input(const GraphInput &input,
                                   int max_num_inputs,
                                   int max_num_outputs,
+                                  int max_subgraph_size,
                                   bool connected_only)
 {
     if (max_num_inputs < 0 || max_num_outputs < 0)
         throw nb::value_error("I/O limits must be non-negative");
+    if (max_subgraph_size < -1)
+        throw nb::value_error("max_subgraph_size must be -1 or non-negative");
 
     auto dfg = make_dfg(input);
     if (dfg->forbidden().size() == dfg->num_nodes())
@@ -336,6 +349,7 @@ SolveResult solve_all_graph_input(const GraphInput &input,
         *dfg,
         max_num_inputs,
         max_num_outputs,
+        max_subgraph_size,
         [&result](const IOSubgraph &subgraph) {
             result.max_weight = std::max(result.max_weight, subgraph.weight());
             result.subgraphs.push_back(to_vector(subgraph.nodes()));
@@ -348,11 +362,17 @@ std::shared_ptr<ExhaustiveSubgraphIterator> iter_all_graph_input(
     const GraphInput &input,
     int max_num_inputs,
     int max_num_outputs,
+    int max_subgraph_size,
     std::size_t max_queue_size,
     bool connected_only)
 {
     return std::make_shared<ExhaustiveSubgraphIterator>(
-        input, max_num_inputs, max_num_outputs, max_queue_size, connected_only);
+        input,
+        max_num_inputs,
+        max_num_outputs,
+        max_subgraph_size,
+        max_queue_size,
+        connected_only);
 }
 
 }
@@ -387,6 +407,7 @@ NB_MODULE(_native, m)
         nb::arg("graph_input"),
         nb::arg("max_num_inputs"),
         nb::arg("max_num_outputs"),
+        nb::arg("max_subgraph_size") = -1,
         nb::arg("iteration_type") = "linear-rev",
         nb::arg("flags") = 0xff);
     m.def(
@@ -395,6 +416,7 @@ NB_MODULE(_native, m)
         nb::arg("graph_input"),
         nb::arg("max_num_inputs"),
         nb::arg("max_num_outputs"),
+        nb::arg("max_subgraph_size") = -1,
         nb::arg("connected_only") = false);
     m.def(
         "iter_all_graph_input",
@@ -402,6 +424,7 @@ NB_MODULE(_native, m)
         nb::arg("graph_input"),
         nb::arg("max_num_inputs"),
         nb::arg("max_num_outputs"),
+        nb::arg("max_subgraph_size") = -1,
         nb::arg("max_queue_size") = 128,
         nb::arg("connected_only") = false);
 }

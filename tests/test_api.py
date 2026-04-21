@@ -419,6 +419,30 @@ class TestMVS(unittest.TestCase):
             result,
         )
 
+    def test_exhaustive_enumeration_respects_max_subgraph_size(self) -> None:
+        graph = nx.DiGraph()
+        graph.add_node("src", forbidden=True)
+        graph.add_edges_from(
+            [
+                ("src", "a"),
+                ("a", "b"),
+            ]
+        )
+
+        result = {
+            frozenset(nodes)
+            for nodes in enumerate_convex_subgraphs(
+                graph,
+                1,
+                1,
+                max_subgraph_size=1,
+                forbid_sources_and_sinks=False,
+                allow_zero_outputs=True,
+            )
+        }
+
+        self.assertSetEqual({frozenset({"a"}), frozenset({"b"})}, result)
+
     def test_connected_only_exhaustive_avoids_disconnected_unions(self) -> None:
         graph = nx.DiGraph()
         graph.add_node("src_a", forbidden=True)
@@ -456,6 +480,30 @@ class TestMVS(unittest.TestCase):
         self.assertNotIn(frozenset({"a", "b"}), connected)
         self.assertIn(frozenset({"a"}), connected)
         self.assertIn(frozenset({"b"}), connected)
+
+    def test_connected_zero_output_respects_max_subgraph_size(self) -> None:
+        graph = nx.DiGraph()
+        graph.add_node("p", forbidden=True)
+        graph.add_edges_from(
+            [
+                ("p", "a"),
+                ("p", "b"),
+            ]
+        )
+
+        result = {
+            frozenset(nodes)
+            for nodes in enumerate_convex_subgraphs(
+                graph,
+                1,
+                0,
+                max_subgraph_size=1,
+                forbid_sources_and_sinks=False,
+                connected_only=True,
+            )
+        }
+
+        self.assertSetEqual({frozenset({"a"}), frozenset({"b"})}, result)
 
     def test_connected_only_maximum_avoids_disconnected_unions(self) -> None:
         graph = nx.DiGraph()
@@ -496,6 +544,32 @@ class TestMVS(unittest.TestCase):
 
         self.assertSetEqual({frozenset({"a", "b"})}, unconstrained)
         self.assertSetEqual({frozenset({"a"})}, connected)
+
+    def test_maximum_enumeration_respects_max_subgraph_size(self) -> None:
+        graph = nx.DiGraph()
+        graph.add_node("p", forbidden=True)
+        graph.add_node("a", weight=3.0)
+        graph.add_node("b", weight=3.0)
+        graph.add_edges_from(
+            [
+                ("p", "a"),
+                ("p", "b"),
+            ]
+        )
+
+        result = {
+            frozenset(nodes)
+            for nodes in enumerate_maximum_convex_subgraphs(
+                graph,
+                1,
+                2,
+                max_subgraph_size=1,
+                weighted=True,
+                forbid_sources_and_sinks=False,
+            )
+        }
+
+        self.assertSetEqual({frozenset({"a"}), frozenset({"b"})}, result)
 
     def test_repository_benchmarks(self) -> None:
         cases = [
