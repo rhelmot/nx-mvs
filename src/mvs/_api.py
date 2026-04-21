@@ -275,6 +275,8 @@ def _iter_convex_subgraphs(
     ordering: Literal["default", "sort", "toposort"],
     max_queue_size: int,
 ) -> Iterator[set[NodeT]]:
+    seen: set[tuple[int, ...]] | None = set() if allow_zero_outputs else None
+
     for subgraph in iter_all_graph_input(
         payload,
         max_num_inputs,
@@ -283,6 +285,9 @@ def _iter_convex_subgraphs(
         max_queue_size=max_queue_size,
         connected_only=connected_only,
     ):
+        if seen is not None:
+            key = tuple(subgraph)
+            seen.add(key)
         yield {node_order[index] for index in subgraph}
 
     if allow_zero_outputs:
@@ -294,6 +299,9 @@ def _iter_convex_subgraphs(
             max_queue_size=max_queue_size,
             connected_only=connected_only,
         ):
+            key = tuple(subgraph)
+            if seen is not None and key in seen:
+                continue
             yield {node_order[index] for index in subgraph}
 
 
