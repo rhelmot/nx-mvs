@@ -35,6 +35,7 @@ def solve_all_graph_input(
     graph_input: GraphInput,
     max_num_inputs: int,
     max_num_outputs: int,
+    connected_only: bool = False,
 ) -> SolveResult: ...
 
 
@@ -43,4 +44,5 @@ def iter_all_graph_input(
     max_num_inputs: int,
     max_num_outputs: int,
     max_queue_size: int = 128,
+    connected_only: bool = False,
 ) -> ExhaustiveSubgraphIterator: ...

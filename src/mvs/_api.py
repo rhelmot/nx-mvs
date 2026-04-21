@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Hashable, Iterator
 import math
-from typing import Literal, TypeVar
+from typing import Literal, TypeVar, cast
 
 import networkx as nx
 
@@ -76,6 +76,7 @@ def enumerate_maximum_convex_subgraphs(
     forbidden_attr: str = "forbidden",
     forbid_sources_and_sinks: bool = True,
     allow_zero_outputs: bool = False,
+    connected_only: bool = False,
     iteration_type: str = "linear-rev",
     ordering: Literal["default", "sort", "toposort"] = "toposort",
     flags: int = 0xFF,
@@ -99,6 +100,7 @@ def enumerate_maximum_convex_subgraphs(
             forbidden_attr=forbidden_attr,
             forbid_sources_and_sinks=forbid_sources_and_sinks,
             allow_zero_outputs=allow_zero_outputs,
+            connected_only=connected_only,
             ordering=ordering,
         ):
             weight = _subgraph_weight(
@@ -112,6 +114,40 @@ def enumerate_maximum_convex_subgraphs(
                 best_subgraphs = [subgraph]
             elif math.isclose(weight, best_weight):
                 best_subgraphs.append(subgraph)
+        return iter(best_subgraphs)
+
+    if connected_only:
+        best_weight = float("-inf")
+        best_subgraphs: list[set[NodeT]] = []
+        for component in _weakly_connected_component_graphs(graph):
+            payload, node_order = graph_to_input(
+                component,
+                weighted=weighted,
+                weight_attr=weight_attr,
+                forbidden_attr=forbidden_attr,
+                forbid_sources_and_sinks=forbid_sources_and_sinks,
+                ordering=ordering,
+            )
+            result = solve_graph_input(
+                payload,
+                max_num_inputs,
+                max_num_outputs,
+                iteration_type=iteration_type,
+                flags=flags,
+            )
+            if not result.subgraphs:
+                continue
+            if result.max_weight > best_weight:
+                best_weight = result.max_weight
+                best_subgraphs = [
+                    {node_order[index] for index in subgraph}
+                    for subgraph in result.subgraphs
+                ]
+            elif math.isclose(result.max_weight, best_weight):
+                best_subgraphs.extend(
+                    {node_order[index] for index in subgraph}
+                    for subgraph in result.subgraphs
+                )
         return iter(best_subgraphs)
 
     payload, node_order = graph_to_input(
@@ -142,6 +178,7 @@ def enumerate_convex_subgraphs(
     forbidden_attr: str = "forbidden",
     forbid_sources_and_sinks: bool = True,
     allow_zero_outputs: bool = False,
+    connected_only: bool = False,
     ordering: Literal["default", "sort", "toposort"] = "toposort",
     max_queue_size: int = 128,
 ) -> Iterator[set[NodeT]]:
@@ -150,6 +187,35 @@ def enumerate_convex_subgraphs(
 
     This uses the upstream exhaustive enumerator rather than the maximum-only search.
     """
+
+    if connected_only:
+        def iter_connected_results() -> Iterator[set[NodeT]]:
+            for component in _weakly_connected_component_graphs(graph):
+                payload, node_order = graph_to_input(
+                    component,
+                    weighted=weighted,
+                    weight_attr=weight_attr,
+                    forbidden_attr=forbidden_attr,
+                    forbid_sources_and_sinks=forbid_sources_and_sinks,
+                    ordering=ordering,
+                )
+                yield from _iter_convex_subgraphs(
+                    component,
+                    payload,
+                    node_order,
+                    max_num_inputs=max_num_inputs,
+                    max_num_outputs=max_num_outputs,
+                    weighted=weighted,
+                    weight_attr=weight_attr,
+                    forbidden_attr=forbidden_attr,
+                    forbid_sources_and_sinks=forbid_sources_and_sinks,
+                    allow_zero_outputs=allow_zero_outputs,
+                    connected_only=connected_only,
+                    ordering=ordering,
+                    max_queue_size=max_queue_size,
+                )
+
+        return iter_connected_results()
 
     payload, node_order = graph_to_input(
         graph,
@@ -171,6 +237,7 @@ def enumerate_convex_subgraphs(
         forbidden_attr=forbidden_attr,
         forbid_sources_and_sinks=forbid_sources_and_sinks,
         allow_zero_outputs=allow_zero_outputs,
+        connected_only=connected_only,
         ordering=ordering,
         max_queue_size=max_queue_size,
     )
@@ -188,6 +255,7 @@ def _iter_convex_subgraphs(
     forbidden_attr: str,
     forbid_sources_and_sinks: bool,
     allow_zero_outputs: bool,
+    connected_only: bool,
     ordering: Literal["default", "sort", "toposort"],
     max_queue_size: int,
 ) -> Iterator[set[NodeT]]:
@@ -196,23 +264,29 @@ def _iter_convex_subgraphs(
         max_num_inputs,
         max_num_outputs,
         max_queue_size=max_queue_size,
+        connected_only=connected_only,
     ):
         yield {node_order[index] for index in subgraph}
 
     if allow_zero_outputs:
-        reversed_graph = graph.reverse(copy=True)
-        reversed_payload, reversed_node_order = graph_to_input(
-            reversed_graph,
-            weighted=weighted,
-            weight_attr=weight_attr,
-            forbidden_attr=forbidden_attr,
-            forbid_sources_and_sinks=forbid_sources_and_sinks,
-            ordering=ordering,
-        )
         for subgraph in iter_all_graph_input(
-            reversed_payload,
-            0,
+            payload,
             max_num_inputs,
+            0,
             max_queue_size=max_queue_size,
+            connected_only=connected_only,
         ):
-            yield {reversed_node_order[index] for index in subgraph}
+            yield {node_order[index] for index in subgraph}
+
+
+def _weakly_connected_component_graphs(
+    graph: nx.DiGraph[NodeT],
+) -> tuple[nx.DiGraph[NodeT], ...]:
+    if graph.number_of_nodes() == 0:
+        return ()
+    if nx.is_weakly_connected(graph):
+        return (graph,)
+    return tuple(
+        cast("nx.DiGraph[NodeT]", graph.subgraph(nodes).copy())
+        for nodes in nx.weakly_connected_components(graph)
+    )

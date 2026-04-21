@@ -5,6 +5,8 @@
     perf,
     strace,
     py-spy,
+    procps,
+    gdb,
 }:
 mkShell {
     buildInputs = [
@@ -24,6 +26,8 @@ mkShell {
         perf
         strace
         py-spy
+        procps
+        gdb
     ];
 
     shellHook = ''

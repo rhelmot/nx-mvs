@@ -202,6 +202,199 @@ class TestMVS(unittest.TestCase):
         self.assertNotIn(frozenset({"mid", "sink"}), without_zero_outputs)
         self.assertIn(frozenset({"mid", "sink"}), with_zero_outputs)
 
+    def test_direct_zero_output_enumeration(self) -> None:
+        graph = nx.DiGraph()
+        graph.add_node("src", forbidden=True)
+        graph.add_edges_from(
+            [
+                ("src", "mid"),
+                ("mid", "sink"),
+            ]
+        )
+
+        result = {
+            frozenset(nodes)
+            for nodes in enumerate_convex_subgraphs(
+                graph,
+                1,
+                0,
+                forbid_sources_and_sinks=False,
+            )
+        }
+        self.assertSetEqual({frozenset({"mid", "sink"})}, result)
+
+    def test_zero_output_role_reversal_respects_original_input_bound(self) -> None:
+        graph = nx.DiGraph()
+        graph.add_edges_from(
+            [
+                ("i1", "a"),
+                ("i2", "a"),
+                ("i3", "b"),
+                ("i4", "b"),
+                ("i5", "c"),
+                ("a", "b"),
+                ("b", "c"),
+            ]
+        )
+
+        result = {
+            frozenset(nodes)
+            for nodes in enumerate_convex_subgraphs(
+                graph,
+                4,
+                1,
+                forbid_sources_and_sinks=False,
+                allow_zero_outputs=True,
+            )
+        }
+
+        self.assertNotIn(frozenset({"a", "b", "c"}), result)
+        self.assertIn(frozenset({"b", "c"}), result)
+
+    def test_zero_output_role_reversal_maximum_respects_original_input_bound(
+        self,
+    ) -> None:
+        graph = nx.DiGraph()
+        graph.add_node("a", weight=5.0)
+        graph.add_node("b", weight=5.0)
+        graph.add_node("c", weight=5.0)
+        graph.add_node("i1", weight=1.0, forbidden=True)
+        graph.add_node("i2", weight=1.0, forbidden=True)
+        graph.add_node("i3", weight=1.0, forbidden=True)
+        graph.add_node("i4", weight=1.0, forbidden=True)
+        graph.add_node("i5", weight=1.0, forbidden=True)
+        graph.add_edges_from(
+            [
+                ("i1", "a"),
+                ("i2", "a"),
+                ("i3", "b"),
+                ("i4", "b"),
+                ("i5", "c"),
+                ("a", "b"),
+                ("b", "c"),
+            ]
+        )
+
+        result = {
+            frozenset(nodes)
+            for nodes in enumerate_maximum_convex_subgraphs(
+                graph,
+                4,
+                0,
+                weighted=True,
+                forbid_sources_and_sinks=False,
+                allow_zero_outputs=True,
+            )
+        }
+
+        self.assertSetEqual({frozenset({"b", "c"})}, result)
+
+    def test_zero_output_enumeration_allows_shared_original_inputs(self) -> None:
+        graph = nx.DiGraph()
+        graph.add_node("i", forbidden=True)
+        graph.add_edges_from(
+            [
+                ("i", "a"),
+                ("i", "b"),
+                ("i", "c"),
+                ("a", "b"),
+                ("b", "c"),
+            ]
+        )
+
+        result = {
+            frozenset(nodes)
+            for nodes in enumerate_convex_subgraphs(
+                graph,
+                1,
+                1,
+                forbid_sources_and_sinks=False,
+                allow_zero_outputs=True,
+            )
+        }
+
+        self.assertIn(frozenset({"a", "b", "c"}), result)
+
+    def test_connected_only_zero_output_excludes_disconnected_single_component(
+        self,
+    ) -> None:
+        graph = nx.DiGraph()
+        graph.add_node("p", forbidden=True)
+        graph.add_edges_from(
+            [
+                ("p", "a"),
+                ("p", "b"),
+            ]
+        )
+
+        unconstrained = {
+            frozenset(nodes)
+            for nodes in enumerate_convex_subgraphs(
+                graph,
+                1,
+                1,
+                forbid_sources_and_sinks=False,
+                allow_zero_outputs=True,
+            )
+        }
+        connected = {
+            frozenset(nodes)
+            for nodes in enumerate_convex_subgraphs(
+                graph,
+                1,
+                1,
+                forbid_sources_and_sinks=False,
+                allow_zero_outputs=True,
+                connected_only=True,
+            )
+        }
+
+        self.assertIn(frozenset({"a", "b"}), unconstrained)
+        self.assertNotIn(frozenset({"a", "b"}), connected)
+        self.assertIn(frozenset({"a"}), connected)
+        self.assertIn(frozenset({"b"}), connected)
+
+    def test_connected_only_zero_output_maximum_excludes_disconnected_single_component(
+        self,
+    ) -> None:
+        graph = nx.DiGraph()
+        graph.add_node("p", forbidden=True)
+        graph.add_node("a", weight=3.0)
+        graph.add_node("b", weight=3.0)
+        graph.add_edges_from(
+            [
+                ("p", "a"),
+                ("p", "b"),
+            ]
+        )
+
+        unconstrained = {
+            frozenset(nodes)
+            for nodes in enumerate_maximum_convex_subgraphs(
+                graph,
+                1,
+                1,
+                weighted=True,
+                forbid_sources_and_sinks=False,
+                allow_zero_outputs=True,
+            )
+        }
+        connected = {
+            frozenset(nodes)
+            for nodes in enumerate_maximum_convex_subgraphs(
+                graph,
+                1,
+                1,
+                weighted=True,
+                forbid_sources_and_sinks=False,
+                allow_zero_outputs=True,
+                connected_only=True,
+            )
+        }
+
+        self.assertSetEqual({frozenset({"a", "b"})}, unconstrained)
+        self.assertSetEqual({frozenset({"a"}), frozenset({"b"})}, connected)
+
     def test_exhaustive_enumeration_returns_non_maximum_subgraphs(self) -> None:
         graph = nx.DiGraph()
         graph.add_node("src", forbidden=True)
@@ -225,6 +418,84 @@ class TestMVS(unittest.TestCase):
             },
             result,
         )
+
+    def test_connected_only_exhaustive_avoids_disconnected_unions(self) -> None:
+        graph = nx.DiGraph()
+        graph.add_node("src_a", forbidden=True)
+        graph.add_node("src_b", forbidden=True)
+        graph.add_edges_from(
+            [
+                ("src_a", "a"),
+                ("src_b", "b"),
+            ]
+        )
+
+        unconstrained = {
+            frozenset(nodes)
+            for nodes in enumerate_convex_subgraphs(
+                graph,
+                2,
+                1,
+                forbid_sources_and_sinks=False,
+                allow_zero_outputs=True,
+            )
+        }
+        connected = {
+            frozenset(nodes)
+            for nodes in enumerate_convex_subgraphs(
+                graph,
+                2,
+                1,
+                forbid_sources_and_sinks=False,
+                allow_zero_outputs=True,
+                connected_only=True,
+            )
+        }
+
+        self.assertIn(frozenset({"a", "b"}), unconstrained)
+        self.assertNotIn(frozenset({"a", "b"}), connected)
+        self.assertIn(frozenset({"a"}), connected)
+        self.assertIn(frozenset({"b"}), connected)
+
+    def test_connected_only_maximum_avoids_disconnected_unions(self) -> None:
+        graph = nx.DiGraph()
+        graph.add_node("src_a", forbidden=True)
+        graph.add_node("src_b", forbidden=True)
+        graph.add_node("a", weight=3.0)
+        graph.add_node("b", weight=2.0)
+        graph.add_edges_from(
+            [
+                ("src_a", "a"),
+                ("src_b", "b"),
+            ]
+        )
+
+        unconstrained = {
+            frozenset(nodes)
+            for nodes in enumerate_maximum_convex_subgraphs(
+                graph,
+                2,
+                1,
+                weighted=True,
+                forbid_sources_and_sinks=False,
+                allow_zero_outputs=True,
+            )
+        }
+        connected = {
+            frozenset(nodes)
+            for nodes in enumerate_maximum_convex_subgraphs(
+                graph,
+                2,
+                1,
+                weighted=True,
+                forbid_sources_and_sinks=False,
+                allow_zero_outputs=True,
+                connected_only=True,
+            )
+        }
+
+        self.assertSetEqual({frozenset({"a", "b"})}, unconstrained)
+        self.assertSetEqual({frozenset({"a"})}, connected)
 
     def test_repository_benchmarks(self) -> None:
         cases = [
