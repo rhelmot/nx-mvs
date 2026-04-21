@@ -395,6 +395,127 @@ class TestMVS(unittest.TestCase):
         self.assertSetEqual({frozenset({"a", "b"})}, unconstrained)
         self.assertSetEqual({frozenset({"a", "b"})}, connected)
 
+    def test_alternate_graph_filters_zero_output_results(self) -> None:
+        graph = nx.DiGraph()
+        graph.add_node("p", forbidden=True)
+        graph.add_nodes_from(["a", "b", "c"])
+        graph.add_edges_from(
+            [
+                ("p", "a"),
+                ("p", "c"),
+            ]
+        )
+
+        alternate_graph = nx.DiGraph()
+        alternate_graph.add_nodes_from(graph.nodes(data=True))
+        alternate_graph.add_edges_from(
+            [
+                ("a", "b"),
+                ("b", "c"),
+            ]
+        )
+
+        without_alternate = {
+            frozenset(nodes)
+            for nodes in enumerate_convex_subgraphs(
+                graph,
+                1,
+                1,
+                forbid_sources_and_sinks=False,
+                allow_zero_outputs=True,
+            )
+        }
+        with_alternate = {
+            frozenset(nodes)
+            for nodes in enumerate_convex_subgraphs(
+                graph,
+                1,
+                1,
+                alternate_graph=alternate_graph,
+                forbid_sources_and_sinks=False,
+                allow_zero_outputs=True,
+            )
+        }
+
+        self.assertIn(frozenset({"a", "c"}), without_alternate)
+        self.assertNotIn(frozenset({"a", "c"}), with_alternate)
+        self.assertIn(frozenset({"a", "b", "c"}), with_alternate)
+
+    def test_alternate_graph_filters_connected_zero_output_results(self) -> None:
+        graph = nx.DiGraph()
+        graph.add_node("p", forbidden=True)
+        graph.add_nodes_from(["a", "b", "c"])
+        graph.add_edges_from(
+            [
+                ("p", "a"),
+                ("p", "b"),
+                ("p", "c"),
+            ]
+        )
+
+        alternate_graph = nx.DiGraph()
+        alternate_graph.add_nodes_from(graph.nodes(data=True))
+        alternate_graph.add_edges_from(
+            [
+                ("a", "b"),
+                ("b", "c"),
+            ]
+        )
+
+        connected = {
+            frozenset(nodes)
+            for nodes in enumerate_convex_subgraphs(
+                graph,
+                1,
+                1,
+                forbid_sources_and_sinks=False,
+                allow_zero_outputs=True,
+                connected_only=True,
+            )
+        }
+        connected_with_alternate = {
+            frozenset(nodes)
+            for nodes in enumerate_convex_subgraphs(
+                graph,
+                1,
+                1,
+                alternate_graph=alternate_graph,
+                forbid_sources_and_sinks=False,
+                allow_zero_outputs=True,
+                connected_only=True,
+            )
+        }
+
+        self.assertIn(frozenset({"a", "c"}), connected)
+        self.assertNotIn(frozenset({"a", "c"}), connected_with_alternate)
+        self.assertIn(frozenset({"a", "b", "c"}), connected_with_alternate)
+
+    def test_alternate_graph_not_supported_for_native_maximum_search(self) -> None:
+        graph = nx.DiGraph()
+        graph.add_node("p", forbidden=True)
+        graph.add_nodes_from(["a", "b"])
+        graph.add_edges_from(
+            [
+                ("p", "a"),
+                ("p", "b"),
+            ]
+        )
+
+        alternate_graph = nx.DiGraph()
+        alternate_graph.add_nodes_from(graph.nodes(data=True))
+        alternate_graph.add_edge("a", "b")
+
+        with self.assertRaises(NotImplementedError):
+            list(
+                enumerate_maximum_convex_subgraphs(
+                    graph,
+                    1,
+                    2,
+                    alternate_graph=alternate_graph,
+                    forbid_sources_and_sinks=False,
+                )
+            )
+
     def test_exhaustive_enumeration_returns_non_maximum_subgraphs(self) -> None:
         graph = nx.DiGraph()
         graph.add_node("src", forbidden=True)

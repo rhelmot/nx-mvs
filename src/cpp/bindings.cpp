@@ -26,6 +26,7 @@ struct GraphInput {
     std::string name;
     int num_nodes = 0;
     std::vector<std::pair<int, int>> edges;
+    std::vector<std::pair<int, int>> alternate_edges;
     std::vector<double> weights;
     std::vector<uint8_t> forbidden;
     int frequency = 0;
@@ -94,10 +95,15 @@ void validate_graph_input(const GraphInput &input)
             throw nb::value_error("edge endpoint out of range");
         }
     }
+    for (const auto &[source, target] : input.alternate_edges) {
+        if (source < 0 || source >= input.num_nodes || target < 0 || target >= input.num_nodes) {
+            throw nb::value_error("alternate edge endpoint out of range");
+        }
+    }
 }
 
-std::unique_ptr<DFG> make_dfg(const GraphInput &input,
-                              bool materialize_opt_in_terminals = false)
+std::unique_ptr<DFG> make_graph(const GraphInput &input,
+                                bool materialize_opt_in_terminals = false)
 {
     validate_graph_input(input);
     if (materialize_opt_in_terminals && !input.forbid_sources_and_sinks) {
@@ -116,58 +122,80 @@ std::unique_ptr<DFG> make_dfg(const GraphInput &input,
                 ++extra_nodes;
         }
 
-        auto dfg = std::make_unique<DFG>(
+        auto graph = std::make_unique<DFG>(
             input.name,
             input.num_nodes + extra_nodes,
             input.frequency,
             true);
         for (int node = 0; node < input.num_nodes; ++node) {
             if (!input.weights.empty())
-                dfg->weight(node) = input.weights[static_cast<std::size_t>(node)];
+                graph->weight(node) = input.weights[static_cast<std::size_t>(node)];
             if (!input.forbidden.empty() &&
                 input.forbidden[static_cast<std::size_t>(node)] != 0) {
-                dfg->set_forbidden(node);
+                graph->set_forbidden(node);
             }
         }
         for (const auto &[source, target] : input.edges)
-            dfg->add_edge(source, target);
+            graph->add_edge(source, target);
 
         int next_node = input.num_nodes;
         for (int node = 0; node < input.num_nodes; ++node) {
             if (has_in[static_cast<std::size_t>(node)] == 0) {
-                dfg->weight(next_node) = 0;
-                dfg->set_forbidden(next_node);
-                dfg->add_edge(next_node, node);
+                graph->weight(next_node) = 0;
+                graph->set_forbidden(next_node);
+                graph->add_edge(next_node, node);
                 ++next_node;
             }
             if (has_out[static_cast<std::size_t>(node)] == 0) {
-                dfg->weight(next_node) = 0;
-                dfg->set_forbidden(next_node);
-                dfg->add_edge(node, next_node);
+                graph->weight(next_node) = 0;
+                graph->set_forbidden(next_node);
+                graph->add_edge(node, next_node);
                 ++next_node;
             }
         }
-        dfg->index();
-        return dfg;
+        graph->index();
+        return graph;
     }
 
-    auto dfg = std::make_unique<DFG>(
+    auto graph = std::make_unique<DFG>(
         input.name,
         input.num_nodes,
         input.frequency,
         input.forbid_sources_and_sinks);
     for (int node = 0; node < input.num_nodes; ++node) {
         if (!input.weights.empty())
-            dfg->weight(node) = input.weights[static_cast<std::size_t>(node)];
+            graph->weight(node) = input.weights[static_cast<std::size_t>(node)];
         if (!input.forbidden.empty() &&
             input.forbidden[static_cast<std::size_t>(node)] != 0) {
-            dfg->set_forbidden(node);
+            graph->set_forbidden(node);
         }
     }
     for (const auto &[source, target] : input.edges)
-        dfg->add_edge(source, target);
-    dfg->index();
-    return dfg;
+        graph->add_edge(source, target);
+    graph->index();
+    return graph;
+}
+
+std::unique_ptr<DFG> make_alternate_graph(const GraphInput &input)
+{
+    if (input.alternate_edges.empty())
+        return nullptr;
+
+    auto graph = std::make_unique<DFG>(
+        input.name + "_alternate",
+        input.num_nodes,
+        input.frequency,
+        false);
+    for (int node = 0; node < input.num_nodes; ++node) {
+        if (!input.forbidden.empty() &&
+            input.forbidden[static_cast<std::size_t>(node)] != 0) {
+            graph->set_forbidden(node);
+        }
+    }
+    for (const auto &[source, target] : input.alternate_edges)
+        graph->add_edge(source, target);
+    graph->index();
+    return graph;
 }
 
 class ExhaustiveSubgraphIterator {
@@ -178,7 +206,8 @@ public:
                                int max_subgraph_size,
                                std::size_t max_queue_size,
                                bool connected_only)
-        : dfg_(make_dfg(input))
+        : graph_(make_graph(input))
+        , alternate_graph_(make_alternate_graph(input))
         , max_num_inputs_(max_num_inputs)
         , max_num_outputs_(max_num_outputs)
         , max_subgraph_size_(max_subgraph_size)
@@ -191,7 +220,7 @@ public:
             throw nb::value_error("max_subgraph_size must be -1 or non-negative");
         if (max_queue_size_ == 0)
             throw nb::value_error("max_queue_size must be positive");
-        if (dfg_->forbidden().size() == dfg_->num_nodes()) {
+        if (graph_->forbidden().size() == graph_->num_nodes()) {
             done_ = true;
             return;
         }
@@ -258,10 +287,11 @@ private:
         try {
             StderrSilencer silence;
             vs_enumerate(
-                *dfg_,
+                *graph_,
                 max_num_inputs_,
                 max_num_outputs_,
                 max_subgraph_size_,
+                alternate_graph_.get(),
                 [this](const IOSubgraph &subgraph) {
                     push_result(to_vector(subgraph.nodes()));
                 },
@@ -279,7 +309,8 @@ private:
         cv_.notify_all();
     }
 
-    std::unique_ptr<DFG> dfg_;
+    std::unique_ptr<DFG> graph_;
+    std::unique_ptr<DFG> alternate_graph_;
     int max_num_inputs_;
     int max_num_outputs_;
     int max_subgraph_size_;
@@ -305,13 +336,16 @@ SolveResult solve_graph_input(const GraphInput &input,
         throw nb::value_error("I/O limits must be non-negative");
     if (max_subgraph_size < -1)
         throw nb::value_error("max_subgraph_size must be -1 or non-negative");
+    if (!input.alternate_edges.empty())
+        throw nb::value_error(
+            "alternate_edges are only supported by exhaustive enumeration paths");
 
-    auto dfg = make_dfg(input, true);
-    if (dfg->forbidden().size() == dfg->num_nodes())
+    auto graph = make_graph(input, true);
+    if (graph->forbidden().size() == graph->num_nodes())
         return {};
 
     StderrSilencer silence;
-    MVSFinder finder(dfg.get());
+    MVSFinder finder(graph.get());
     const auto output = finder.enumerate(
         max_num_inputs,
         max_num_outputs,
@@ -339,17 +373,19 @@ SolveResult solve_all_graph_input(const GraphInput &input,
     if (max_subgraph_size < -1)
         throw nb::value_error("max_subgraph_size must be -1 or non-negative");
 
-    auto dfg = make_dfg(input);
-    if (dfg->forbidden().size() == dfg->num_nodes())
+    auto graph = make_graph(input);
+    auto alternate_graph = make_alternate_graph(input);
+    if (graph->forbidden().size() == graph->num_nodes())
         return {};
 
     SolveResult result;
     StderrSilencer silence;
     vs_enumerate(
-        *dfg,
+        *graph,
         max_num_inputs,
         max_num_outputs,
         max_subgraph_size,
+        alternate_graph.get(),
         [&result](const IOSubgraph &subgraph) {
             result.max_weight = std::max(result.max_weight, subgraph.weight());
             result.subgraphs.push_back(to_vector(subgraph.nodes()));
@@ -386,6 +422,7 @@ NB_MODULE(_native, m)
         .def_rw("name", &GraphInput::name)
         .def_rw("num_nodes", &GraphInput::num_nodes)
         .def_rw("edges", &GraphInput::edges)
+        .def_rw("alternate_edges", &GraphInput::alternate_edges)
         .def_rw("weights", &GraphInput::weights)
         .def_rw("forbidden", &GraphInput::forbidden)
         .def_rw("frequency", &GraphInput::frequency)

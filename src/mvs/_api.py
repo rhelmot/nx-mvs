@@ -27,6 +27,7 @@ def _subgraph_weight(
 def graph_to_input(
     graph: nx.DiGraph[NodeT],
     *,
+    alternate_graph: nx.DiGraph[NodeT] | None = None,
     weighted: bool = False,
     weight_attr: str = "weight",
     forbidden_attr: str = "forbidden",
@@ -36,6 +37,11 @@ def graph_to_input(
 ) -> tuple[GraphInput, tuple[NodeT, ...]]:  # second tuple item is the reverse mapping for the ints
     if not nx.is_directed_acyclic_graph(graph):
         raise ValueError("Graph must be a DAG")
+    if alternate_graph is not None:
+        if not nx.is_directed_acyclic_graph(alternate_graph):
+            raise ValueError("alternate_graph must be a DAG")
+        if set(alternate_graph.nodes) != set(graph.nodes):
+            raise ValueError("alternate_graph must have exactly the same nodes as graph")
 
     match ordering:
         case "default":
@@ -54,6 +60,14 @@ def graph_to_input(
     payload.edges = [
         (node_index[source], node_index[target]) for source, target in graph.edges()
     ]
+    payload.alternate_edges = (
+        [
+            (node_index[source], node_index[target])
+            for source, target in alternate_graph.edges()
+        ]
+        if alternate_graph is not None
+        else []
+    )
     payload.weights = [
         float(graph.nodes[node].get(weight_attr, 1.0)) if weighted else 1.0
         for node in node_order
@@ -71,6 +85,7 @@ def enumerate_maximum_convex_subgraphs(
     max_num_inputs: int,
     max_num_outputs: int,
     *,
+    alternate_graph: nx.DiGraph[NodeT] | None = None,
     max_subgraph_size: int | None = None,
     weighted: bool = False,
     weight_attr: str = "weight",
@@ -100,6 +115,7 @@ def enumerate_maximum_convex_subgraphs(
             graph,
             max_num_inputs,
             max_num_outputs,
+            alternate_graph=alternate_graph,
             max_subgraph_size=max_subgraph_size,
             weighted=weighted,
             weight_attr=weight_attr,
@@ -122,12 +138,23 @@ def enumerate_maximum_convex_subgraphs(
                 best_subgraphs.append(subgraph)
         return iter(best_subgraphs)
 
+    if alternate_graph is not None:
+        raise NotImplementedError(
+            "alternate_graph is currently only supported for exhaustive enumeration "
+            "and maximum enumeration when max_num_outputs <= 1"
+        )
+
     if connected_only:
         best_weight = float("-inf")
         best_subgraphs: list[set[NodeT]] = []
         for component in _weakly_connected_component_graphs(graph):
             payload, node_order = graph_to_input(
                 component,
+                alternate_graph=(
+                    cast("nx.DiGraph[NodeT]", alternate_graph.subgraph(component.nodes).copy())
+                    if alternate_graph is not None
+                    else None
+                ),
                 weighted=weighted,
                 weight_attr=weight_attr,
                 forbidden_attr=forbidden_attr,
@@ -159,6 +186,7 @@ def enumerate_maximum_convex_subgraphs(
 
     payload, node_order = graph_to_input(
         graph,
+        alternate_graph=alternate_graph,
         weighted=weighted,
         weight_attr=weight_attr,
         forbidden_attr=forbidden_attr,
@@ -181,6 +209,7 @@ def enumerate_convex_subgraphs(
     max_num_inputs: int,
     max_num_outputs: int,
     *,
+    alternate_graph: nx.DiGraph[NodeT] | None = None,
     max_subgraph_size: int | None = None,
     weighted: bool = False,
     weight_attr: str = "weight",
@@ -206,6 +235,11 @@ def enumerate_convex_subgraphs(
             for component in _weakly_connected_component_graphs(graph):
                 payload, node_order = graph_to_input(
                     component,
+                    alternate_graph=(
+                        cast("nx.DiGraph[NodeT]", alternate_graph.subgraph(component.nodes).copy())
+                        if alternate_graph is not None
+                        else None
+                    ),
                     weighted=weighted,
                     weight_attr=weight_attr,
                     forbidden_attr=forbidden_attr,
@@ -233,6 +267,7 @@ def enumerate_convex_subgraphs(
 
     payload, node_order = graph_to_input(
         graph,
+        alternate_graph=alternate_graph,
         weighted=weighted,
         weight_attr=weight_attr,
         forbidden_attr=forbidden_attr,

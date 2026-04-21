@@ -5,6 +5,7 @@ class GraphInput:
     name: str
     num_nodes: int
     edges: list[tuple[int, int]]
+    alternate_edges: list[tuple[int, int]]
     weights: list[float]
     forbidden: list[int]
     frequency: int
