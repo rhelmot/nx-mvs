@@ -540,6 +540,78 @@ class TestMVS(unittest.TestCase):
             result,
         )
 
+    def test_direct_zero_output_connected_with_alternate_graph_has_no_duplicates(
+        self,
+    ) -> None:
+        graph = nx.DiGraph()
+        graph.add_node("p", forbidden=True)
+        graph.add_nodes_from(["a", "b", "c", "d"])
+        graph.add_edges_from(
+            [
+                ("p", "a"),
+                ("p", "b"),
+                ("p", "c"),
+                ("p", "d"),
+            ]
+        )
+
+        alternate_graph = nx.DiGraph()
+        alternate_graph.add_nodes_from(["a", "b", "c", "d"])
+        alternate_graph.add_edges_from(
+            [
+                ("a", "c"),
+                ("b", "c"),
+                ("c", "d"),
+            ]
+        )
+
+        result = list(
+            enumerate_convex_subgraphs(
+                graph,
+                1,
+                0,
+                alternate_graph=alternate_graph,
+                forbid_sources_and_sinks=False,
+                connected_only=True,
+            )
+        )
+        unique = {frozenset(nodes) for nodes in result}
+
+        self.assertEqual(len(result), len(unique))
+
+    def test_direct_zero_output_connected_with_alternate_graph_respects_output_bound(
+        self,
+    ) -> None:
+        graph = nx.DiGraph()
+        graph.add_node("p", forbidden=True)
+        graph.add_nodes_from(["a", "sink"])
+        graph.add_edges_from(
+            [
+                ("p", "a"),
+                ("a", "sink"),
+            ]
+        )
+
+        alternate_graph = nx.DiGraph()
+        alternate_graph.add_nodes_from(["a", "sink"])
+        alternate_graph.add_edge("a", "sink")
+
+        result = {
+            frozenset(nodes)
+            for nodes in enumerate_convex_subgraphs(
+                graph,
+                1,
+                0,
+                alternate_graph=alternate_graph,
+                forbid_sources_and_sinks=False,
+                connected_only=True,
+            )
+        }
+
+        self.assertNotIn(frozenset({"a"}), result)
+        self.assertIn(frozenset({"sink"}), result)
+        self.assertIn(frozenset({"a", "sink"}), result)
+
     def test_alternate_graph_allows_extra_forbidden_nodes(self) -> None:
         graph = nx.DiGraph()
         graph.add_nodes_from(["a", "b"])
@@ -585,6 +657,40 @@ class TestMVS(unittest.TestCase):
             "alternate_graph may only omit nodes that are forbidden in graph",
         ):
             graph_to_input(graph, alternate_graph=alternate_graph)
+
+    def test_connected_only_alternate_graph_respects_cross_component_paths(self) -> None:
+        graph = nx.DiGraph()
+        graph.add_node("src", forbidden=True)
+        graph.add_nodes_from(["a", "b", "x"])
+        graph.add_edges_from(
+            [
+                ("src", "a"),
+                ("a", "b"),
+            ]
+        )
+
+        alternate_graph = nx.DiGraph()
+        alternate_graph.add_nodes_from(graph.nodes(data=True))
+        alternate_graph.add_edges_from(
+            [
+                ("a", "x"),
+                ("x", "b"),
+            ]
+        )
+
+        result = {
+            frozenset(nodes)
+            for nodes in enumerate_convex_subgraphs(
+                graph,
+                1,
+                1,
+                alternate_graph=alternate_graph,
+                forbid_sources_and_sinks=False,
+                connected_only=True,
+            )
+        }
+
+        self.assertNotIn(frozenset({"a", "b"}), result)
 
     def test_string_forbidden_attributes_are_parsed_as_booleans(self) -> None:
         graph = nx.DiGraph()

@@ -199,11 +199,12 @@ def enumerate_maximum_convex_subgraphs(
     if connected_only:
         best_weight = float("-inf")
         best_subgraphs: list[set[NodeT]] = []
-        for component in _weakly_connected_component_graphs(graph):
+        for component_nodes in _connected_component_node_sets(graph, alternate_graph):
+            component = cast("nx.DiGraph[NodeT]", graph.subgraph(component_nodes).copy())
             payload, node_order = graph_to_input(
                 component,
                 alternate_graph=(
-                    cast("nx.DiGraph[NodeT]", alternate_graph.subgraph(component.nodes).copy())
+                    cast("nx.DiGraph[NodeT]", alternate_graph.subgraph(component_nodes).copy())
                     if alternate_graph is not None
                     else None
                 ),
@@ -284,11 +285,12 @@ def enumerate_convex_subgraphs(
 
     if connected_only:
         def iter_connected_results() -> Iterator[set[NodeT]]:
-            for component in _weakly_connected_component_graphs(graph):
+            for component_nodes in _connected_component_node_sets(graph, alternate_graph):
+                component = cast("nx.DiGraph[NodeT]", graph.subgraph(component_nodes).copy())
                 payload, node_order = graph_to_input(
                     component,
                     alternate_graph=(
-                        cast("nx.DiGraph[NodeT]", alternate_graph.subgraph(component.nodes).copy())
+                        cast("nx.DiGraph[NodeT]", alternate_graph.subgraph(component_nodes).copy())
                         if alternate_graph is not None
                         else None
                     ),
@@ -392,14 +394,24 @@ def _iter_convex_subgraphs(
             yield {node_order[index] for index in subgraph}
 
 
-def _weakly_connected_component_graphs(
+def _connected_component_node_sets(
     graph: nx.DiGraph[NodeT],
-) -> tuple[nx.DiGraph[NodeT], ...]:
+    alternate_graph: nx.DiGraph[NodeT] | None = None,
+) -> tuple[set[NodeT], ...]:
     if graph.number_of_nodes() == 0:
         return ()
-    if nx.is_weakly_connected(graph):
-        return (graph,)
-    return tuple(
-        cast("nx.DiGraph[NodeT]", graph.subgraph(nodes).copy())
-        for nodes in nx.weakly_connected_components(graph)
-    )
+    if alternate_graph is None:
+        if nx.is_weakly_connected(graph):
+            return (set(graph.nodes),)
+        return tuple(set(nodes) for nodes in nx.weakly_connected_components(graph))
+
+    combined = nx.Graph()
+    combined.add_nodes_from(graph.nodes)
+    combined.add_edges_from(graph.edges())
+    combined.add_nodes_from(alternate_graph.nodes)
+    combined.add_edges_from(alternate_graph.edges())
+    if combined.number_of_nodes() == 0:
+        return ()
+    if nx.is_connected(combined):
+        return (set(combined.nodes),)
+    return tuple(set(nodes) for nodes in nx.connected_components(combined))
