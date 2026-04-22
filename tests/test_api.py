@@ -5,7 +5,11 @@ import unittest
 
 import networkx as nx
 
-from mvs import enumerate_convex_subgraphs, enumerate_maximum_convex_subgraphs
+from mvs import (
+    enumerate_convex_subgraphs,
+    enumerate_maximum_convex_subgraphs,
+    graph_to_input,
+)
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -407,7 +411,7 @@ class TestMVS(unittest.TestCase):
         )
 
         alternate_graph = nx.DiGraph()
-        alternate_graph.add_nodes_from(graph.nodes(data=True))
+        alternate_graph.add_nodes_from(["a", "b", "c"])
         alternate_graph.add_edges_from(
             [
                 ("a", "b"),
@@ -454,7 +458,7 @@ class TestMVS(unittest.TestCase):
         )
 
         alternate_graph = nx.DiGraph()
-        alternate_graph.add_nodes_from(graph.nodes(data=True))
+        alternate_graph.add_nodes_from(["a", "b", "c"])
         alternate_graph.add_edges_from(
             [
                 ("a", "b"),
@@ -489,6 +493,52 @@ class TestMVS(unittest.TestCase):
         self.assertIn(frozenset({"a", "c"}), connected)
         self.assertNotIn(frozenset({"a", "c"}), connected_with_alternate)
         self.assertIn(frozenset({"a", "b", "c"}), connected_with_alternate)
+
+    def test_alternate_graph_allows_extra_forbidden_nodes(self) -> None:
+        graph = nx.DiGraph()
+        graph.add_nodes_from(["a", "b"])
+        graph.add_edge("a", "b")
+
+        alternate_graph = nx.DiGraph()
+        alternate_graph.add_node("p", forbidden=True)
+        alternate_graph.add_nodes_from(["a", "b"])
+        alternate_graph.add_edge("a", "b")
+
+        without_alternate = {
+            frozenset(nodes)
+            for nodes in enumerate_convex_subgraphs(
+                graph,
+                1,
+                1,
+                forbid_sources_and_sinks=False,
+            )
+        }
+        with_alternate = {
+            frozenset(nodes)
+            for nodes in enumerate_convex_subgraphs(
+                graph,
+                1,
+                1,
+                alternate_graph=alternate_graph,
+                forbid_sources_and_sinks=False,
+            )
+        }
+
+        self.assertSetEqual(without_alternate, with_alternate)
+
+    def test_alternate_graph_rejects_missing_non_forbidden_nodes(self) -> None:
+        graph = nx.DiGraph()
+        graph.add_nodes_from(["a", "b"])
+        graph.add_edge("a", "b")
+
+        alternate_graph = nx.DiGraph()
+        alternate_graph.add_node("a")
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "alternate_graph may only omit nodes that are forbidden in graph",
+        ):
+            graph_to_input(graph, alternate_graph=alternate_graph)
 
     def test_alternate_graph_not_supported_for_native_maximum_search(self) -> None:
         graph = nx.DiGraph()

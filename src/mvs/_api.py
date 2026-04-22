@@ -37,21 +37,64 @@ def graph_to_input(
 ) -> tuple[GraphInput, tuple[NodeT, ...]]:  # second tuple item is the reverse mapping for the ints
     if not nx.is_directed_acyclic_graph(graph):
         raise ValueError("Graph must be a DAG")
+    graph_nodes = set(graph.nodes)
+    alternate_nodes: set[NodeT] = set()
+    graph_forbidden = {
+        node for node in graph_nodes if bool(graph.nodes[node].get(forbidden_attr, False))
+    }
+    alternate_forbidden: set[NodeT] = set()
     if alternate_graph is not None:
         if not nx.is_directed_acyclic_graph(alternate_graph):
             raise ValueError("alternate_graph must be a DAG")
-        if set(alternate_graph.nodes) != set(graph.nodes):
-            raise ValueError("alternate_graph must have exactly the same nodes as graph")
+        alternate_nodes = set(alternate_graph.nodes)
+        alternate_forbidden = {
+            node
+            for node in alternate_nodes
+            if bool(alternate_graph.nodes[node].get(forbidden_attr, False))
+        }
+        missing_from_alternate = graph_nodes - alternate_nodes
+        if missing_from_alternate - graph_forbidden:
+            raise ValueError(
+                "alternate_graph may only omit nodes that are forbidden in graph"
+            )
+        missing_from_graph = alternate_nodes - graph_nodes
+        if missing_from_graph - alternate_forbidden:
+            raise ValueError(
+                "graph may only omit nodes that are forbidden in alternate_graph"
+            )
+    all_nodes = graph_nodes | alternate_nodes
 
     match ordering:
         case "default":
             node_order = list(graph)
+            if alternate_graph is not None:
+                node_order.extend(
+                    node for node in alternate_graph if node not in graph_nodes
+                )
         case "sort":
             # if it crashes it crashes
-            node_order = sorted(graph)  # type: ignore
+            node_order = sorted(all_nodes)  # type: ignore
         case "toposort":
             node_order = list(nx.topological_sort(graph))
+            if alternate_graph is not None:
+                node_order.extend(
+                    node
+                    for node in nx.topological_sort(alternate_graph)
+                    if node not in graph_nodes
+                )
     node_index = {node: index for index, node in enumerate(node_order)}
+    forbidden_nodes = graph_forbidden | alternate_forbidden
+
+    def node_weight(node: NodeT) -> float:
+        if not weighted:
+            return 1.0
+        if node in graph_nodes:
+            return float(graph.nodes[cast("NodeT", node)].get(weight_attr, 1.0))
+        return float(
+            cast("nx.DiGraph[NodeT]", alternate_graph).nodes[cast("NodeT", node)].get(
+                weight_attr, 1.0
+            )
+        )
 
     payload = GraphInput()
     payload.name = graph.graph.get("name", "") if name is None else name
@@ -68,13 +111,10 @@ def graph_to_input(
         if alternate_graph is not None
         else []
     )
-    payload.weights = [
-        float(graph.nodes[node].get(weight_attr, 1.0)) if weighted else 1.0
-        for node in node_order
-    ]
+    payload.weights = [node_weight(node) for node in node_order]
     payload.forbid_sources_and_sinks = forbid_sources_and_sinks
     payload.forbidden = [
-        1 if bool(graph.nodes[node].get(forbidden_attr, False)) else 0
+        1 if node in forbidden_nodes else 0
         for node in node_order
     ]
     return payload, tuple(node_order)
