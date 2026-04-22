@@ -144,6 +144,7 @@ class TestMVS(unittest.TestCase):
                 1,
                 1,
                 forbid_sources_and_sinks=False,
+                allow_zero_outputs=True,
             )
         }
         self.assertSetEqual(
@@ -494,6 +495,51 @@ class TestMVS(unittest.TestCase):
         self.assertNotIn(frozenset({"a", "c"}), connected_with_alternate)
         self.assertIn(frozenset({"a", "b", "c"}), connected_with_alternate)
 
+    def test_direct_zero_output_connected_with_alternate_graph(self) -> None:
+        graph = nx.DiGraph()
+        graph.add_node("p", forbidden=True)
+        graph.add_nodes_from(["a", "b", "c"])
+        graph.add_edges_from(
+            [
+                ("p", "a"),
+                ("p", "b"),
+                ("p", "c"),
+            ]
+        )
+
+        alternate_graph = nx.DiGraph()
+        alternate_graph.add_nodes_from(["a", "b", "c"])
+        alternate_graph.add_edges_from(
+            [
+                ("a", "b"),
+                ("b", "c"),
+            ]
+        )
+
+        result = {
+            frozenset(nodes)
+            for nodes in enumerate_convex_subgraphs(
+                graph,
+                1,
+                0,
+                alternate_graph=alternate_graph,
+                forbid_sources_and_sinks=False,
+                connected_only=True,
+            )
+        }
+
+        self.assertSetEqual(
+            {
+                frozenset({"a"}),
+                frozenset({"b"}),
+                frozenset({"c"}),
+                frozenset({"a", "b"}),
+                frozenset({"b", "c"}),
+                frozenset({"a", "b", "c"}),
+            },
+            result,
+        )
+
     def test_alternate_graph_allows_extra_forbidden_nodes(self) -> None:
         graph = nx.DiGraph()
         graph.add_nodes_from(["a", "b"])
@@ -539,6 +585,30 @@ class TestMVS(unittest.TestCase):
             "alternate_graph may only omit nodes that are forbidden in graph",
         ):
             graph_to_input(graph, alternate_graph=alternate_graph)
+
+    def test_string_forbidden_attributes_are_parsed_as_booleans(self) -> None:
+        graph = nx.DiGraph()
+        graph.add_node("src", forbidden="True")
+        graph.add_node("mid", forbidden="False")
+        graph.add_node("sink", forbidden="False")
+        graph.add_edges_from(
+            [
+                ("src", "mid"),
+                ("mid", "sink"),
+            ]
+        )
+
+        result = {
+            frozenset(nodes)
+            for nodes in enumerate_convex_subgraphs(
+                graph,
+                1,
+                1,
+                forbid_sources_and_sinks=False,
+            )
+        }
+
+        self.assertIn(frozenset({"mid"}), result)
 
     def test_alternate_graph_not_supported_for_native_maximum_search(self) -> None:
         graph = nx.DiGraph()

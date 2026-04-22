@@ -12,6 +12,18 @@ from ._native import GraphInput, iter_all_graph_input, solve_graph_input
 NodeT = TypeVar("NodeT", bound=Hashable)
 
 
+def _as_bool(value: object) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"1", "true", "yes", "on"}:
+            return True
+        if normalized in {"0", "false", "no", "off", ""}:
+            return False
+    return bool(value)
+
+
 def _subgraph_weight(
     graph: nx.DiGraph[NodeT],
     subgraph: set[NodeT],
@@ -40,7 +52,7 @@ def graph_to_input(
     graph_nodes = set(graph.nodes)
     alternate_nodes: set[NodeT] = set()
     graph_forbidden = {
-        node for node in graph_nodes if bool(graph.nodes[node].get(forbidden_attr, False))
+        node for node in graph_nodes if _as_bool(graph.nodes[node].get(forbidden_attr, False))
     }
     alternate_forbidden: set[NodeT] = set()
     if alternate_graph is not None:
@@ -50,7 +62,7 @@ def graph_to_input(
         alternate_forbidden = {
             node
             for node in alternate_nodes
-            if bool(alternate_graph.nodes[node].get(forbidden_attr, False))
+            if _as_bool(alternate_graph.nodes[node].get(forbidden_attr, False))
         }
         missing_from_alternate = graph_nodes - alternate_nodes
         if missing_from_alternate - graph_forbidden:
