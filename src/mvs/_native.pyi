@@ -50,3 +50,14 @@ def iter_all_graph_input(
     max_queue_size: int = 128,
     connected_only: bool = False,
 ) -> ExhaustiveSubgraphIterator: ...
+
+
+def sample_zero_output_graph_input(
+    graph_input: GraphInput,
+    max_num_inputs: int,
+    max_subgraph_size: int = -1,
+    max_states_expanded: int = 10000,
+    max_samples: int = 1000,
+    max_children_per_state: int = 2,
+    size_bin_width: int = 4,
+) -> SolveResult: ...

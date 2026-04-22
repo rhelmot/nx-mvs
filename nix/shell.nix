@@ -7,6 +7,7 @@
     py-spy,
     procps,
     gdb,
+    graphviz,
 }:
 mkShell {
     buildInputs = [
@@ -19,6 +20,9 @@ mkShell {
             nanobind
             cmake
             ninja
+            xdot
+            pygraphviz
+            matplotlib
         ]))
     ];
     nativeBuildInputs = [
@@ -28,6 +32,7 @@ mkShell {
         py-spy
         procps
         gdb
+        graphviz
     ];
 
     shellHook = ''

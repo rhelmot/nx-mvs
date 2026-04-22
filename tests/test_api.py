@@ -5,10 +5,12 @@ import unittest
 
 import networkx as nx
 
+from growth import grow_zero_output_convex_subgraphs
 from mvs import (
     enumerate_convex_subgraphs,
     enumerate_maximum_convex_subgraphs,
     graph_to_input,
+    sample_zero_output_convex_subgraphs,
 )
 
 
@@ -227,6 +229,182 @@ class TestMVS(unittest.TestCase):
             )
         }
         self.assertSetEqual({frozenset({"mid", "sink"})}, result)
+
+    def test_sample_zero_output_convex_subgraphs_is_deterministic(self) -> None:
+        graph = nx.DiGraph()
+        graph.add_node("p", forbidden=True)
+        graph.add_edges_from(
+            [
+                ("p", "a"),
+                ("p", "b"),
+                ("p", "c"),
+                ("p", "d"),
+            ]
+        )
+
+        sample = [
+            frozenset(nodes)
+            for nodes in sample_zero_output_convex_subgraphs(
+                graph,
+                1,
+                forbid_sources_and_sinks=False,
+                max_states_expanded=32,
+                max_samples=4,
+                max_children_per_state=1,
+                size_bin_width=1,
+            )
+        ]
+
+        self.assertEqual(
+            [
+                frozenset({"a"}),
+                frozenset({"a", "b"}),
+                frozenset({"a", "b", "c"}),
+                frozenset({"a", "b", "c", "d"}),
+            ],
+            sample,
+        )
+
+    def test_sample_zero_output_convex_subgraphs_respects_alternate_graph(self) -> None:
+        graph = nx.DiGraph()
+        graph.add_node("p", forbidden=True)
+        graph.add_edges_from(
+            [
+                ("p", "a"),
+                ("p", "b"),
+                ("p", "c"),
+                ("a", "c"),
+            ]
+        )
+        alternate_graph = nx.DiGraph()
+        alternate_graph.add_nodes_from(graph.nodes(data=True))
+        alternate_graph.add_edges_from(
+            [
+                ("a", "b"),
+                ("b", "c"),
+            ]
+        )
+
+        result = [
+            frozenset(nodes)
+            for nodes in sample_zero_output_convex_subgraphs(
+                graph,
+                1,
+                alternate_graph=alternate_graph,
+                forbid_sources_and_sinks=False,
+                max_states_expanded=64,
+                max_samples=8,
+                max_children_per_state=2,
+                size_bin_width=1,
+            )
+        ]
+
+        self.assertEqual(len(result), len(set(result)))
+        self.assertIn(frozenset({"a", "b", "c"}), result)
+        self.assertNotIn(frozenset({"a", "c"}), result)
+
+    def test_grow_zero_output_convex_subgraphs_enumerates_supersets(self) -> None:
+        graph = nx.DiGraph()
+        graph.add_node("p", forbidden=True)
+        graph.add_edges_from(
+            [
+                ("p", "a"),
+                ("p", "b"),
+                ("p", "c"),
+            ]
+        )
+
+        result = {
+            frozenset(nodes)
+            for nodes in grow_zero_output_convex_subgraphs(
+                graph,
+                None,
+                seed_nodes={"a"},
+                max_num_inputs=1,
+                forbid_sources_and_sinks=False,
+            )
+        }
+
+        self.assertSetEqual(
+            {
+                frozenset({"a"}),
+                frozenset({"a", "b"}),
+                frozenset({"a", "c"}),
+                frozenset({"a", "b", "c"}),
+            },
+            result,
+        )
+
+    def test_grow_zero_output_convex_subgraphs_oracle_prunes_growth(self) -> None:
+        graph = nx.DiGraph()
+        graph.add_node("p", forbidden=True)
+        graph.add_edges_from(
+            [
+                ("p", "a"),
+                ("p", "b"),
+                ("p", "c"),
+            ]
+        )
+
+        result = {
+            frozenset(nodes)
+            for nodes in grow_zero_output_convex_subgraphs(
+                graph,
+                None,
+                seed_nodes={"a"},
+                max_num_inputs=1,
+                forbid_sources_and_sinks=False,
+                oracle=lambda nodes: len(nodes) < 2,
+            )
+        }
+
+        self.assertSetEqual(
+            {
+                frozenset({"a"}),
+                frozenset({"a", "b"}),
+                frozenset({"a", "c"}),
+            },
+            result,
+        )
+
+    def test_grow_zero_output_convex_subgraphs_respects_alternate_graph(self) -> None:
+        graph = nx.DiGraph()
+        graph.add_node("p", forbidden=True)
+        graph.add_edges_from(
+            [
+                ("p", "a"),
+                ("p", "b"),
+                ("p", "c"),
+            ]
+        )
+        alternate_graph = nx.DiGraph()
+        alternate_graph.add_nodes_from(graph.nodes(data=True))
+        alternate_graph.add_edges_from(
+            [
+                ("a", "b"),
+                ("b", "c"),
+            ]
+        )
+
+        result = {
+            frozenset(nodes)
+            for nodes in grow_zero_output_convex_subgraphs(
+                graph,
+                alternate_graph,
+                seed_nodes={"a"},
+                max_num_inputs=1,
+                forbid_sources_and_sinks=False,
+            )
+        }
+
+        self.assertSetEqual(
+            {
+                frozenset({"a"}),
+                frozenset({"a", "b"}),
+                frozenset({"a", "b", "c"}),
+            },
+            result,
+        )
 
     def test_zero_output_role_reversal_respects_original_input_bound(self) -> None:
         graph = nx.DiGraph()

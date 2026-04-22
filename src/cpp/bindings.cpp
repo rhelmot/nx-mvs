@@ -394,6 +394,48 @@ SolveResult solve_all_graph_input(const GraphInput &input,
     return result;
 }
 
+SolveResult sample_zero_output_graph_input(const GraphInput &input,
+                                           int max_num_inputs,
+                                           int max_subgraph_size,
+                                           int max_states_expanded,
+                                           int max_samples,
+                                           int max_children_per_state,
+                                           int size_bin_width)
+{
+    if (max_num_inputs < 0)
+        throw nb::value_error("I/O limits must be non-negative");
+    if (max_subgraph_size < -1)
+        throw nb::value_error("max_subgraph_size must be -1 or non-negative");
+    if (max_states_expanded < 0 || max_samples < 0)
+        throw nb::value_error("sampling budgets must be non-negative");
+    if (max_children_per_state <= 0)
+        throw nb::value_error("max_children_per_state must be positive");
+    if (size_bin_width <= 0)
+        throw nb::value_error("size_bin_width must be positive");
+
+    auto graph = make_graph(input);
+    auto alternate_graph = make_alternate_graph(input);
+    if (graph->forbidden().size() == graph->num_nodes())
+        return {};
+
+    SolveResult result;
+    StderrSilencer silence;
+    vs_sample_zero_output_connected(
+        *graph,
+        max_num_inputs,
+        max_subgraph_size,
+        alternate_graph.get(),
+        [&result](const IOSubgraph &subgraph) {
+            result.max_weight = std::max(result.max_weight, subgraph.weight());
+            result.subgraphs.push_back(to_vector(subgraph.nodes()));
+        },
+        max_states_expanded,
+        max_samples,
+        max_children_per_state,
+        size_bin_width);
+    return result;
+}
+
 std::shared_ptr<ExhaustiveSubgraphIterator> iter_all_graph_input(
     const GraphInput &input,
     int max_num_inputs,
@@ -464,4 +506,14 @@ NB_MODULE(_native, m)
         nb::arg("max_subgraph_size") = -1,
         nb::arg("max_queue_size") = 128,
         nb::arg("connected_only") = false);
+    m.def(
+        "sample_zero_output_graph_input",
+        &sample_zero_output_graph_input,
+        nb::arg("graph_input"),
+        nb::arg("max_num_inputs"),
+        nb::arg("max_subgraph_size") = -1,
+        nb::arg("max_states_expanded") = 10000,
+        nb::arg("max_samples") = 1000,
+        nb::arg("max_children_per_state") = 2,
+        nb::arg("size_bin_width") = 4);
 }

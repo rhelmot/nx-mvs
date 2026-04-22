@@ -2,8 +2,15 @@ from ._api import (
     enumerate_convex_subgraphs,
     enumerate_maximum_convex_subgraphs,
     graph_to_input,
+    sample_zero_output_convex_subgraphs,
 )
-from ._native import GraphInput, SolveResult, solve_all_graph_input, solve_graph_input
+from ._native import (
+    GraphInput,
+    SolveResult,
+    sample_zero_output_graph_input,
+    solve_all_graph_input,
+    solve_graph_input,
+)
 
 __all__ = [
     "GraphInput",
@@ -11,6 +18,8 @@ __all__ = [
     "enumerate_convex_subgraphs",
     "enumerate_maximum_convex_subgraphs",
     "graph_to_input",
+    "sample_zero_output_convex_subgraphs",
+    "sample_zero_output_graph_input",
     "solve_all_graph_input",
     "solve_graph_input",
 ]

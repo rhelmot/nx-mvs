@@ -6,7 +6,12 @@ from typing import Literal, TypeVar, cast
 
 import networkx as nx
 
-from ._native import GraphInput, iter_all_graph_input, solve_graph_input
+from ._native import (
+    GraphInput,
+    iter_all_graph_input,
+    sample_zero_output_graph_input,
+    solve_graph_input,
+)
 
 
 NodeT = TypeVar("NodeT", bound=Hashable)
@@ -345,6 +350,72 @@ def enumerate_convex_subgraphs(
         ordering=ordering,
         max_queue_size=max_queue_size,
     )
+
+
+def sample_zero_output_convex_subgraphs(
+    graph: nx.DiGraph[NodeT],
+    max_num_inputs: int,
+    *,
+    alternate_graph: nx.DiGraph[NodeT] | None = None,
+    max_subgraph_size: int | None = None,
+    weighted: bool = False,
+    weight_attr: str = "weight",
+    forbidden_attr: str = "forbidden",
+    forbid_sources_and_sinks: bool = True,
+    ordering: Literal["default", "sort", "toposort"] = "toposort",
+    max_states_expanded: int = 10000,
+    max_samples: int = 1000,
+    max_children_per_state: int = 2,
+    size_bin_width: int = 4,
+) -> Iterator[set[NodeT]]:
+    """
+    Heuristically sample connected zero-output convex subgraphs.
+
+    This is not exhaustive. It targets the expensive zero-output connected path by
+    exploring a bounded subset of the native state DAG and favoring underrepresented
+    size regions at branch points.
+    """
+
+    native_max_subgraph_size = -1 if max_subgraph_size is None else max_subgraph_size
+    if native_max_subgraph_size < -1:
+        raise ValueError("max_subgraph_size must be non-negative or None")
+    if max_states_expanded < 0 or max_samples < 0:
+        raise ValueError("sampling budgets must be non-negative")
+    if max_children_per_state <= 0:
+        raise ValueError("max_children_per_state must be positive")
+    if size_bin_width <= 0:
+        raise ValueError("size_bin_width must be positive")
+
+    def iter_component_samples() -> Iterator[set[NodeT]]:
+        for component_nodes in _connected_component_node_sets(graph, alternate_graph):
+            component = cast("nx.DiGraph[NodeT]", graph.subgraph(component_nodes).copy())
+            component_alternate = (
+                cast("nx.DiGraph[NodeT]", alternate_graph.subgraph(component_nodes).copy())
+                if alternate_graph is not None
+                else None
+            )
+            payload, node_order = graph_to_input(
+                component,
+                alternate_graph=component_alternate,
+                weighted=weighted,
+                weight_attr=weight_attr,
+                forbidden_attr=forbidden_attr,
+                forbid_sources_and_sinks=forbid_sources_and_sinks,
+                ordering=ordering,
+            )
+            result = sample_zero_output_graph_input(
+                payload,
+                max_num_inputs,
+                native_max_subgraph_size,
+                max_states_expanded=max_states_expanded,
+                max_samples=max_samples,
+                max_children_per_state=max_children_per_state,
+                size_bin_width=size_bin_width,
+            )
+            for subgraph in result.subgraphs:
+                yield {node_order[index] for index in subgraph}
+
+    return iter_component_samples()
 
 
 def _iter_convex_subgraphs(
