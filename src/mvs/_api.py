@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Hashable, Iterator
+from collections.abc import Callable, Hashable, Iterator
 import math
 from typing import Literal, TypeVar, cast
 
@@ -8,6 +8,7 @@ import networkx as nx
 
 from ._native import (
     GraphInput,
+    grow_zero_output_graph_input,
     iter_all_graph_input,
     sample_zero_output_graph_input,
     solve_graph_input,
@@ -416,6 +417,53 @@ def sample_zero_output_convex_subgraphs(
                 yield {node_order[index] for index in subgraph}
 
     return iter_component_samples()
+
+
+def grow_zero_output_convex_subgraphs(
+    graph: nx.DiGraph[NodeT],
+    seed_nodes: set[NodeT],
+    *,
+    alternate_graph: nx.DiGraph[NodeT] | None = None,
+    max_num_inputs: int = 4,
+    max_subgraph_size: int | None = None,
+    forbidden_attr: str = "forbidden",
+    forbid_sources_and_sinks: bool = False,
+    ordering: Literal["default", "sort", "toposort"] = "toposort",
+    oracle: Callable[[set[NodeT]], bool] | None = None,
+) -> Iterator[set[NodeT]]:
+    native_max_subgraph_size = -1 if max_subgraph_size is None else max_subgraph_size
+    if native_max_subgraph_size < -1:
+        raise ValueError("max_subgraph_size must be non-negative or None")
+
+    payload, node_order = graph_to_input(
+        graph,
+        alternate_graph=alternate_graph,
+        forbidden_attr=forbidden_attr,
+        forbid_sources_and_sinks=forbid_sources_and_sinks,
+        ordering=ordering,
+    )
+    node_index = {node: index for index, node in enumerate(node_order)}
+    seed_indices: list[int] = []
+    for node in seed_nodes:
+        try:
+            seed_indices.append(node_index[node])
+        except KeyError as exc:
+            raise ValueError(f"seed node {node!r} is not present in the graph set") from exc
+
+    oracle_indices = (
+        (lambda indices: oracle({node_order[index] for index in indices}))
+        if oracle is not None
+        else None
+    )
+
+    result = grow_zero_output_graph_input(
+        payload,
+        seed_indices,
+        max_num_inputs,
+        native_max_subgraph_size,
+        oracle_indices,
+    )
+    return ({node_order[index] for index in subgraph} for subgraph in result.subgraphs)
 
 
 def _iter_convex_subgraphs(

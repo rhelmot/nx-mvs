@@ -436,6 +436,51 @@ SolveResult sample_zero_output_graph_input(const GraphInput &input,
     return result;
 }
 
+SolveResult grow_zero_output_graph_input(const GraphInput &input,
+                                         std::vector<int> seed_nodes,
+                                         int max_num_inputs,
+                                         int max_subgraph_size,
+                                         nb::object oracle)
+{
+    if (max_num_inputs < 0)
+        throw nb::value_error("I/O limits must be non-negative");
+    if (max_subgraph_size < -1)
+        throw nb::value_error("max_subgraph_size must be -1 or non-negative");
+
+    auto graph = make_graph(input);
+    auto alternate_graph = make_alternate_graph(input);
+    if (graph->forbidden().size() == graph->num_nodes())
+        return {};
+
+    intset seed(static_cast<unsigned>(graph->num_nodes()));
+    for (const auto &node : seed_nodes) {
+        if (node < 0 || node >= graph->num_nodes())
+            throw nb::value_error("seed node index out of range");
+        seed.add(static_cast<unsigned>(node));
+    }
+
+    SolveResult result;
+    StderrSilencer silence;
+    nb::gil_scoped_release release;
+    vs_grow_zero_output_connected(
+        *graph,
+        seed,
+        max_num_inputs,
+        max_subgraph_size,
+        alternate_graph.get(),
+        [&result, &oracle](const IOSubgraph &subgraph) {
+            auto nodes = to_vector(subgraph.nodes());
+            result.max_weight = std::max(result.max_weight, subgraph.weight());
+            result.subgraphs.push_back(nodes);
+            if (oracle.is_none())
+                return true;
+
+            nb::gil_scoped_acquire acquire;
+            return nb::cast<bool>(oracle(nodes));
+        });
+    return result;
+}
+
 std::shared_ptr<ExhaustiveSubgraphIterator> iter_all_graph_input(
     const GraphInput &input,
     int max_num_inputs,
@@ -516,4 +561,12 @@ NB_MODULE(_native, m)
         nb::arg("max_samples") = 1000,
         nb::arg("max_children_per_state") = 2,
         nb::arg("size_bin_width") = 4);
+    m.def(
+        "grow_zero_output_graph_input",
+        &grow_zero_output_graph_input,
+        nb::arg("graph_input"),
+        nb::arg("seed_nodes"),
+        nb::arg("max_num_inputs"),
+        nb::arg("max_subgraph_size") = -1,
+        nb::arg("oracle") = nb::none());
 }

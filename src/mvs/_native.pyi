@@ -61,3 +61,12 @@ def sample_zero_output_graph_input(
     max_children_per_state: int = 2,
     size_bin_width: int = 4,
 ) -> SolveResult: ...
+
+
+def grow_zero_output_graph_input(
+    graph_input: GraphInput,
+    seed_nodes: list[int],
+    max_num_inputs: int,
+    max_subgraph_size: int = -1,
+    oracle: object | None = None,
+) -> SolveResult: ...
