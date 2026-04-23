@@ -400,7 +400,10 @@ SolveResult sample_zero_output_graph_input(const GraphInput &input,
                                            int max_states_expanded,
                                            int max_samples,
                                            int max_children_per_state,
-                                           int size_bin_width)
+                                           int size_bin_width,
+                                           int thicken_radius,
+                                           bool bucket_by_num_inputs,
+                                           int minimal_node_bin_width)
 {
     if (max_num_inputs < 0)
         throw nb::value_error("I/O limits must be non-negative");
@@ -412,6 +415,10 @@ SolveResult sample_zero_output_graph_input(const GraphInput &input,
         throw nb::value_error("max_children_per_state must be positive");
     if (size_bin_width <= 0)
         throw nb::value_error("size_bin_width must be positive");
+    if (thicken_radius < 0)
+        throw nb::value_error("thicken_radius must be non-negative");
+    if (minimal_node_bin_width < 0)
+        throw nb::value_error("minimal_node_bin_width must be non-negative");
 
     auto graph = make_graph(input);
     auto alternate_graph = make_alternate_graph(input);
@@ -432,7 +439,10 @@ SolveResult sample_zero_output_graph_input(const GraphInput &input,
         max_states_expanded,
         max_samples,
         max_children_per_state,
-        size_bin_width);
+        size_bin_width,
+        thicken_radius,
+        bucket_by_num_inputs,
+        minimal_node_bin_width);
     return result;
 }
 
@@ -560,7 +570,10 @@ NB_MODULE(_native, m)
         nb::arg("max_states_expanded") = 10000,
         nb::arg("max_samples") = 1000,
         nb::arg("max_children_per_state") = 2,
-        nb::arg("size_bin_width") = 4);
+        nb::arg("size_bin_width") = 4,
+        nb::arg("thicken_radius") = 1,
+        nb::arg("bucket_by_num_inputs") = true,
+        nb::arg("minimal_node_bin_width") = 1);
     m.def(
         "grow_zero_output_graph_input",
         &grow_zero_output_graph_input,

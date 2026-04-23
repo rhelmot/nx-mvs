@@ -60,6 +60,9 @@ def sample_zero_output_graph_input(
     max_samples: int = 1000,
     max_children_per_state: int = 2,
     size_bin_width: int = 4,
+    thicken_radius: int = 1,
+    bucket_by_num_inputs: bool = True,
+    minimal_node_bin_width: int = 1,
 ) -> SolveResult: ...
 
 

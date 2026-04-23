@@ -1,0 +1,436 @@
+from __future__ import annotations
+
+from collections.abc import Iterable
+from pathlib import Path
+import unittest
+from typing import Literal
+
+import networkx as nx
+
+from mvs import (
+    enumerate_convex_subgraphs,
+    grow_zero_output_convex_subgraphs,
+    sample_zero_output_convex_subgraphs,
+)
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
+def _sample_sets(
+    graph: nx.DiGraph[str],
+    *,
+    alternate_graph: nx.DiGraph[str] | None = None,
+    max_num_inputs: int = 1,
+    max_subgraph_size: int = 10,
+    max_states_expanded: int = 8,
+    max_samples: int = 32,
+    max_children_per_state: int = 2,
+    size_bin_width: int = 1,
+    thicken_radius: int = 1,
+    bucket_by_num_inputs: bool = True,
+    minimal_node_bin_width: int = 1,
+    ordering: Literal["default", "sort", "toposort"] = "toposort",
+    sampling_passes: int = 1,
+    exact_kernel_size: int = 0,
+) -> set[frozenset[str]]:
+    return {
+        frozenset(nodes)
+        for nodes in sample_zero_output_convex_subgraphs(
+            graph,
+            max_num_inputs,
+            alternate_graph=alternate_graph,
+            max_subgraph_size=max_subgraph_size,
+            forbid_sources_and_sinks=False,
+            max_states_expanded=max_states_expanded,
+            max_samples=max_samples,
+            max_children_per_state=max_children_per_state,
+            size_bin_width=size_bin_width,
+            thicken_radius=thicken_radius,
+            bucket_by_num_inputs=bucket_by_num_inputs,
+            minimal_node_bin_width=minimal_node_bin_width,
+            ordering=ordering,
+            sampling_passes=sampling_passes,
+            exact_kernel_size=exact_kernel_size,
+        )
+    }
+
+
+def _launch_distance(
+    graph: nx.DiGraph[str],
+    *,
+    target: frozenset[str],
+    samples: Iterable[frozenset[str]],
+    alternate_graph: nx.DiGraph[str] | None = None,
+    max_num_inputs: int = 1,
+    max_subgraph_size: int = 10,
+) -> int | None:
+    best: int | None = None
+    for sample in samples:
+        if not sample.issubset(target):
+            continue
+
+        seen = {
+            frozenset(nodes)
+            for nodes in grow_zero_output_convex_subgraphs(
+                graph,
+                set(sample),
+                alternate_graph=alternate_graph,
+                max_num_inputs=max_num_inputs,
+                max_subgraph_size=max_subgraph_size,
+                forbid_sources_and_sinks=False,
+                oracle=lambda nodes, target=target: set(nodes).issubset(target),
+            )
+        }
+        if target not in seen:
+            continue
+        distance = len(target) - len(sample)
+        if best is None or distance < best:
+            best = distance
+    return best
+
+
+def _read_dot_graph(path: Path) -> nx.DiGraph[str]:
+    return nx.DiGraph(nx.nx_pydot.read_dot(path))
+
+
+def _build_validator(
+    graph: nx.DiGraph[str],
+    alternate_graph: nx.DiGraph[str] | None = None,
+):
+    all_nodes = list(dict.fromkeys(list(graph.nodes()) + list(alternate_graph.nodes()) if alternate_graph is not None else list(graph.nodes())))
+    node_index = {node: i for i, node in enumerate(all_nodes)}
+    node_count = len(all_nodes)
+    all_mask = (1 << node_count) - 1
+
+    def as_bool(value: object) -> bool:
+        if isinstance(value, str):
+            return value.strip().lower() in {"1", "true", "t", "yes", "y", "on"}
+        return bool(value)
+
+    pred_main = [0] * node_count
+    succ_main = [0] * node_count
+    pred_alt = [0] * node_count
+    succ_alt = [0] * node_count
+    undirected_main = [0] * node_count
+    forbidden = 0
+
+    for current_graph, pred_masks, succ_masks, is_main in (
+        (graph, pred_main, succ_main, True),
+        (alternate_graph, pred_alt, succ_alt, False),
+    ):
+        if current_graph is None:
+            continue
+        for node, attrs in current_graph.nodes(data=True):
+            if as_bool(attrs.get("forbidden", False)):
+                forbidden |= 1 << node_index[node]
+        for source, target in current_graph.edges():
+            u = node_index[source]
+            v = node_index[target]
+            succ_masks[u] |= 1 << v
+            pred_masks[v] |= 1 << u
+            if is_main:
+                undirected_main[u] |= 1 << v
+                undirected_main[v] |= 1 << u
+
+    def topo_order(current_graph: nx.DiGraph[str] | None) -> list[int]:
+        if current_graph is None:
+            return []
+        order = [node_index[node] for node in nx.topological_sort(current_graph)]
+        present = set(current_graph.nodes())
+        order.extend(node_index[node] for node in all_nodes if node not in present)
+        return order
+
+    def transitive_closure(
+        pred_masks: list[int],
+        succ_masks: list[int],
+        topo: list[int],
+    ) -> tuple[list[int], list[int]]:
+        succ_tc = succ_masks[:]
+        for u in reversed(topo):
+            mask = succ_masks[u]
+            while mask:
+                lsb = mask & -mask
+                v = lsb.bit_length() - 1
+                succ_tc[u] |= succ_tc[v]
+                mask ^= lsb
+        pred_tc = pred_masks[:]
+        for u in topo:
+            mask = pred_masks[u]
+            while mask:
+                lsb = mask & -mask
+                v = lsb.bit_length() - 1
+                pred_tc[u] |= pred_tc[v]
+                mask ^= lsb
+        return pred_tc, succ_tc
+
+    pred_tc_main, succ_tc_main = transitive_closure(pred_main, succ_main, topo_order(graph))
+    if alternate_graph is not None:
+        pred_tc_alt, succ_tc_alt = transitive_closure(pred_alt, succ_alt, topo_order(alternate_graph))
+    else:
+        pred_tc_alt, succ_tc_alt = None, None
+
+    def mask_from_nodes(nodes: Iterable[str]) -> int:
+        mask = 0
+        for node in nodes:
+            mask |= 1 << node_index[node]
+        return mask
+
+    def input_mask(mask: int) -> int:
+        inputs = 0
+        current = mask
+        while current:
+            lsb = current & -current
+            u = lsb.bit_length() - 1
+            inputs |= pred_main[u]
+            current ^= lsb
+        return inputs & ~mask
+
+    def connected_with_inputs(mask: int) -> bool:
+        augmented = mask | input_mask(mask)
+        if augmented == 0:
+            return True
+        start = (augmented & -augmented).bit_length() - 1
+        seen = 1 << start
+        stack = [start]
+        while stack:
+            u = stack.pop()
+            neighbors = undirected_main[u] & augmented & ~seen
+            while neighbors:
+                lsb = neighbors & -neighbors
+                v = lsb.bit_length() - 1
+                seen |= 1 << v
+                stack.append(v)
+                neighbors ^= lsb
+        return seen == augmented
+
+    def is_convex(mask: int, pred_tc: list[int], succ_tc: list[int]) -> bool:
+        outside = all_mask & ~mask
+        while outside:
+            lsb = outside & -outside
+            w = lsb.bit_length() - 1
+            if (pred_tc[w] & mask) and (succ_tc[w] & mask):
+                return False
+            outside ^= lsb
+        return True
+
+    def num_outputs(mask: int) -> int:
+        outputs = 0
+        current = mask
+        while current:
+            lsb = current & -current
+            u = lsb.bit_length() - 1
+            if succ_main[u] & ~mask:
+                outputs += 1
+            current ^= lsb
+        return outputs
+
+    def validate(nodes: Iterable[str]) -> None:
+        mask = mask_from_nodes(nodes)
+        assert (mask & forbidden) == 0
+        assert input_mask(mask).bit_count() <= 4
+        assert num_outputs(mask) == 0
+        assert connected_with_inputs(mask)
+        assert is_convex(mask, pred_tc_main, succ_tc_main)
+        if pred_tc_alt is not None and succ_tc_alt is not None:
+            assert is_convex(mask, pred_tc_alt, succ_tc_alt)
+
+    return validate
+
+
+class TestSampling(unittest.TestCase):
+    def test_thickening_improves_low_budget_launch_coverage(self) -> None:
+        graph = nx.DiGraph()
+        graph.add_node("p", forbidden=True)
+        graph.add_edges_from(
+            [
+                ("p", "a"),
+                ("p", "b"),
+                ("p", "c"),
+                ("p", "d"),
+            ]
+        )
+
+        thin = _sample_sets(
+            graph,
+            max_states_expanded=1,
+            max_samples=8,
+            max_children_per_state=2,
+            size_bin_width=1,
+            thicken_radius=0,
+        )
+        thick = _sample_sets(
+            graph,
+            max_states_expanded=1,
+            max_samples=8,
+            max_children_per_state=2,
+            size_bin_width=1,
+            thicken_radius=2,
+        )
+
+        self.assertTrue(thin < thick)
+        target = frozenset({"a", "b", "c", "d"})
+        self.assertNotIn(target, thin)
+        self.assertIn(target, thick)
+        self.assertEqual(2, _launch_distance(graph, target=target, samples=thin))
+        self.assertEqual(0, _launch_distance(graph, target=target, samples=thick))
+
+    def test_extended_diversity_buckets_keep_distinct_families(self) -> None:
+        graph = nx.DiGraph()
+        graph.add_node("p", forbidden=True)
+        graph.add_node("q", forbidden=True)
+        graph.add_edges_from(
+            [
+                ("p", "a"),
+                ("p", "b"),
+                ("b", "c"),
+            ]
+        )
+
+        exact = {
+            frozenset(nodes)
+            for nodes in enumerate_convex_subgraphs(
+                graph,
+                2,
+                0,
+                forbid_sources_and_sinks=False,
+                connected_only=True,
+            )
+        }
+        self.assertIn(frozenset({"a", "c"}), exact)
+        self.assertIn(frozenset({"c"}), exact)
+
+        size_only = _sample_sets(
+            graph,
+            max_num_inputs=2,
+            max_states_expanded=3,
+            max_samples=6,
+            max_children_per_state=2,
+            size_bin_width=10,
+            thicken_radius=0,
+            bucket_by_num_inputs=False,
+            minimal_node_bin_width=0,
+        )
+        extended = _sample_sets(
+            graph,
+            max_num_inputs=2,
+            max_states_expanded=3,
+            max_samples=6,
+            max_children_per_state=2,
+            size_bin_width=10,
+            thicken_radius=0,
+            bucket_by_num_inputs=True,
+            minimal_node_bin_width=1,
+        )
+
+        self.assertIn(frozenset({"a", "c"}), extended)
+        self.assertIn(frozenset({"c"}), extended)
+        self.assertNotIn(frozenset({"a", "c"}), size_only)
+        self.assertNotIn(frozenset({"c"}), size_only)
+
+    def test_multi_pass_sampling_improves_order_sensitive_coverage(self) -> None:
+        graph = nx.DiGraph()
+        graph.add_node("p", forbidden=True)
+        graph.add_nodes_from(["d", "c", "b", "a"])
+        graph.add_edges_from(
+            [
+                ("p", "d"),
+                ("p", "c"),
+                ("p", "b"),
+                ("p", "a"),
+            ]
+        )
+
+        single_pass = _sample_sets(
+            graph,
+            max_states_expanded=1,
+            max_samples=4,
+            max_children_per_state=1,
+            size_bin_width=1,
+            thicken_radius=0,
+            ordering="default",
+            sampling_passes=1,
+        )
+        multi_pass = _sample_sets(
+            graph,
+            max_states_expanded=1,
+            max_samples=4,
+            max_children_per_state=1,
+            size_bin_width=1,
+            thicken_radius=0,
+            ordering="default",
+            sampling_passes=2,
+        )
+
+        target = frozenset({"a", "b"})
+        self.assertGreater(len(multi_pass), len(single_pass))
+        self.assertIsNone(_launch_distance(graph, target=target, samples=single_pass))
+        self.assertEqual(0, _launch_distance(graph, target=target, samples=multi_pass))
+
+    def test_exact_kernel_floor_restores_small_launch_points(self) -> None:
+        graph = nx.DiGraph()
+        graph.add_node("p", forbidden=True)
+        graph.add_nodes_from(["d", "c", "b", "a"])
+        graph.add_edges_from(
+            [
+                ("p", "d"),
+                ("p", "c"),
+                ("p", "b"),
+                ("p", "a"),
+            ]
+        )
+
+        heuristic_only = _sample_sets(
+            graph,
+            max_states_expanded=1,
+            max_samples=4,
+            max_children_per_state=1,
+            size_bin_width=1,
+            thicken_radius=0,
+            ordering="default",
+            sampling_passes=1,
+            exact_kernel_size=0,
+        )
+        with_kernels = _sample_sets(
+            graph,
+            max_states_expanded=1,
+            max_samples=4,
+            max_children_per_state=1,
+            size_bin_width=1,
+            thicken_radius=0,
+            ordering="default",
+            sampling_passes=1,
+            exact_kernel_size=1,
+        )
+
+        target = frozenset({"a", "b"})
+        self.assertNotIn(frozenset({"a"}), heuristic_only)
+        self.assertIn(frozenset({"a"}), with_kernels)
+        self.assertIsNone(_launch_distance(graph, target=target, samples=heuristic_only))
+        self.assertEqual(1, _launch_distance(graph, target=target, samples=with_kernels))
+
+    def test_real_graph_samples_are_unique_and_valid(self) -> None:
+        graph = _read_dot_graph(REPO_ROOT / "graph.dot")
+        alternate_graph = _read_dot_graph(REPO_ROOT / "graph-alt.dot")
+        validate = _build_validator(graph, alternate_graph)
+
+        samples = list(
+            sample_zero_output_convex_subgraphs(
+                graph,
+                4,
+                alternate_graph=alternate_graph,
+                max_subgraph_size=50,
+                forbid_sources_and_sinks=False,
+                max_states_expanded=128,
+                max_samples=64,
+                max_children_per_state=4,
+                size_bin_width=2,
+                thicken_radius=1,
+                sampling_passes=2,
+                exact_kernel_size=1,
+            )
+        )
+
+        self.assertTrue(samples)
+        self.assertEqual(len(samples), len({frozenset(sample) for sample in samples}))
+        for sample in samples:
+            validate(sample)

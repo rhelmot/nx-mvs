@@ -16,6 +16,7 @@ from ._native import (
 
 
 NodeT = TypeVar("NodeT", bound=Hashable)
+Ordering = Literal["default", "sort", "toposort"]
 
 
 def _as_bool(value: object) -> bool:
@@ -50,7 +51,7 @@ def graph_to_input(
     weight_attr: str = "weight",
     forbidden_attr: str = "forbidden",
     forbid_sources_and_sinks: bool = True,
-    ordering: Literal["default", "sort", "toposort"] = "toposort",
+    ordering: Ordering = "toposort",
     name: str | None = None,
 ) -> tuple[GraphInput, tuple[NodeT, ...]]:  # second tuple item is the reverse mapping for the ints
     if not nx.is_directed_acyclic_graph(graph):
@@ -152,7 +153,7 @@ def enumerate_maximum_convex_subgraphs(
     allow_zero_outputs: bool = False,
     connected_only: bool = False,
     iteration_type: str = "linear-rev",
-    ordering: Literal["default", "sort", "toposort"] = "toposort",
+    ordering: Ordering = "toposort",
     flags: int = 0xFF,
 ) -> Iterator[set[NodeT]]:
     """
@@ -276,7 +277,7 @@ def enumerate_convex_subgraphs(
     forbid_sources_and_sinks: bool = True,
     allow_zero_outputs: bool = False,
     connected_only: bool = False,
-    ordering: Literal["default", "sort", "toposort"] = "toposort",
+    ordering: Ordering = "toposort",
     max_queue_size: int = 128,
 ) -> Iterator[set[NodeT]]:
     """
@@ -363,11 +364,16 @@ def sample_zero_output_convex_subgraphs(
     weight_attr: str = "weight",
     forbidden_attr: str = "forbidden",
     forbid_sources_and_sinks: bool = True,
-    ordering: Literal["default", "sort", "toposort"] = "toposort",
+    ordering: Ordering = "toposort",
     max_states_expanded: int = 10000,
     max_samples: int = 1000,
     max_children_per_state: int = 2,
     size_bin_width: int = 4,
+    thicken_radius: int = 1,
+    bucket_by_num_inputs: bool = True,
+    minimal_node_bin_width: int = 1,
+    sampling_passes: int = 1,
+    exact_kernel_size: int = 0,
 ) -> Iterator[set[NodeT]]:
     """
     Heuristically sample connected zero-output convex subgraphs.
@@ -386,6 +392,23 @@ def sample_zero_output_convex_subgraphs(
         raise ValueError("max_children_per_state must be positive")
     if size_bin_width <= 0:
         raise ValueError("size_bin_width must be positive")
+    if thicken_radius < 0:
+        raise ValueError("thicken_radius must be non-negative")
+    if minimal_node_bin_width < 0:
+        raise ValueError("minimal_node_bin_width must be non-negative")
+    if sampling_passes <= 0:
+        raise ValueError("sampling_passes must be positive")
+    if exact_kernel_size < 0:
+        raise ValueError("exact_kernel_size must be non-negative")
+
+    pass_configs = _sampling_pass_configs(
+        ordering,
+        max_children_per_state=max_children_per_state,
+        size_bin_width=size_bin_width,
+        pass_count=sampling_passes,
+    )
+    per_pass_states = max(1, math.ceil(max_states_expanded / len(pass_configs)))
+    per_pass_samples = max(1, math.ceil(max_samples / len(pass_configs)))
 
     def iter_component_samples() -> Iterator[set[NodeT]]:
         for component_nodes in _connected_component_node_sets(graph, alternate_graph):
@@ -395,26 +418,65 @@ def sample_zero_output_convex_subgraphs(
                 if alternate_graph is not None
                 else None
             )
-            payload, node_order = graph_to_input(
-                component,
-                alternate_graph=component_alternate,
-                weighted=weighted,
-                weight_attr=weight_attr,
-                forbidden_attr=forbidden_attr,
-                forbid_sources_and_sinks=forbid_sources_and_sinks,
-                ordering=ordering,
-            )
-            result = sample_zero_output_graph_input(
-                payload,
-                max_num_inputs,
-                native_max_subgraph_size,
-                max_states_expanded=max_states_expanded,
-                max_samples=max_samples,
-                max_children_per_state=max_children_per_state,
-                size_bin_width=size_bin_width,
-            )
-            for subgraph in result.subgraphs:
-                yield {node_order[index] for index in subgraph}
+            seen: set[frozenset[NodeT]] = set()
+
+            if exact_kernel_size > 0:
+                exact_limit = (
+                    exact_kernel_size
+                    if native_max_subgraph_size < 0
+                    else min(native_max_subgraph_size, exact_kernel_size)
+                )
+                for subgraph in enumerate_convex_subgraphs(
+                    component,
+                    max_num_inputs,
+                    0,
+                    alternate_graph=component_alternate,
+                    max_subgraph_size=exact_limit,
+                    weighted=weighted,
+                    weight_attr=weight_attr,
+                    forbidden_attr=forbidden_attr,
+                    forbid_sources_and_sinks=forbid_sources_and_sinks,
+                    allow_zero_outputs=False,
+                    connected_only=True,
+                    ordering=ordering,
+                ):
+                    key = frozenset(subgraph)
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    yield subgraph
+
+            for pass_ordering, pass_children, pass_size_bin_width in pass_configs:
+                payload, node_order = graph_to_input(
+                    component,
+                    alternate_graph=component_alternate,
+                    weighted=weighted,
+                    weight_attr=weight_attr,
+                    forbidden_attr=forbidden_attr,
+                    forbid_sources_and_sinks=forbid_sources_and_sinks,
+                    ordering=pass_ordering,
+                )
+                result = sample_zero_output_graph_input(
+                    payload,
+                    max_num_inputs,
+                    native_max_subgraph_size,
+                    max_states_expanded=per_pass_states,
+                    max_samples=per_pass_samples,
+                    max_children_per_state=pass_children,
+                    size_bin_width=pass_size_bin_width,
+                    thicken_radius=thicken_radius,
+                    bucket_by_num_inputs=bucket_by_num_inputs,
+                    minimal_node_bin_width=minimal_node_bin_width,
+                )
+                for subgraph in result.subgraphs:
+                    nodes = {node_order[index] for index in subgraph}
+                    if exact_kernel_size > 0 and len(nodes) <= exact_kernel_size:
+                        continue
+                    key = frozenset(nodes)
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    yield nodes
 
     return iter_component_samples()
 
@@ -428,7 +490,7 @@ def grow_zero_output_convex_subgraphs(
     max_subgraph_size: int | None = None,
     forbidden_attr: str = "forbidden",
     forbid_sources_and_sinks: bool = False,
-    ordering: Literal["default", "sort", "toposort"] = "toposort",
+    ordering: Ordering = "toposort",
     oracle: Callable[[set[NodeT]], bool] | None = None,
 ) -> Iterator[set[NodeT]]:
     native_max_subgraph_size = -1 if max_subgraph_size is None else max_subgraph_size
@@ -480,7 +542,7 @@ def _iter_convex_subgraphs(
     forbid_sources_and_sinks: bool,
     allow_zero_outputs: bool,
     connected_only: bool,
-    ordering: Literal["default", "sort", "toposort"],
+    ordering: Ordering,
     max_queue_size: int,
 ) -> Iterator[set[NodeT]]:
     seen: set[tuple[int, ...]] | None = set() if allow_zero_outputs else None
@@ -534,3 +596,25 @@ def _connected_component_node_sets(
     if nx.is_connected(combined):
         return (set(combined.nodes),)
     return tuple(set(nodes) for nodes in nx.connected_components(combined))
+
+
+def _sampling_pass_configs(
+    base_ordering: Ordering,
+    *,
+    max_children_per_state: int,
+    size_bin_width: int,
+    pass_count: int,
+) -> tuple[tuple[Ordering, int, int], ...]:
+    candidates: list[tuple[Ordering, int, int]] = [
+        (base_ordering, max_children_per_state, size_bin_width),
+        ("sort", max_children_per_state, max(1, size_bin_width // 2)),
+        ("default", max_children_per_state + 1, size_bin_width),
+        ("toposort", max_children_per_state, size_bin_width + 1),
+        ("sort", max_children_per_state + 1, size_bin_width),
+        ("default", max_children_per_state, max(1, size_bin_width // 2)),
+    ]
+
+    unique_configs = tuple(
+        dict.fromkeys(candidates)
+    )
+    return unique_configs[:pass_count]
