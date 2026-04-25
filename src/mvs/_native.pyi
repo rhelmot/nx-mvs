@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+from typing import TypeVar
+
+StateT = TypeVar("StateT")
 
 class GraphInput:
     name: str
@@ -71,6 +75,6 @@ def grow_zero_output_graph_input(
     seed_nodes: list[int],
     max_num_inputs: int,
     max_subgraph_size: int = -1,
-    oracle: object | None = None,
-    initial_oracle_state: object | None = None,
+    oracle: Callable[[StateT, list[int]], StateT | None] | None = None,
+    initial_oracle_state: StateT | None = None,
 ) -> SolveResult: ...

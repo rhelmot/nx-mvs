@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Hashable, Iterator
-import inspect
 import math
-from typing import Literal, TypeVar, cast
+from typing import Literal, TypeVar, cast, overload
 
 import networkx as nx
 
@@ -17,6 +16,7 @@ from ._native import (
 
 
 NodeT = TypeVar("NodeT", bound=Hashable)
+StateT = TypeVar("StateT")
 Ordering = Literal["default", "sort", "toposort"]
 
 
@@ -482,6 +482,38 @@ def sample_zero_output_convex_subgraphs(
     return iter_component_samples()
 
 
+@overload
+def grow_zero_output_convex_subgraphs(
+    graph: nx.DiGraph[NodeT],
+    seed_nodes: set[NodeT],
+    *,
+    alternate_graph: nx.DiGraph[NodeT] | None = None,
+    max_num_inputs: int = 4,
+    max_subgraph_size: int | None = None,
+    forbidden_attr: str = "forbidden",
+    forbid_sources_and_sinks: bool = False,
+    ordering: Ordering = "toposort",
+    oracle: None = None,
+    initial_oracle_state: None = None,
+) -> Iterator[set[NodeT]]: ...
+
+
+@overload
+def grow_zero_output_convex_subgraphs(
+    graph: nx.DiGraph[NodeT],
+    seed_nodes: set[NodeT],
+    *,
+    alternate_graph: nx.DiGraph[NodeT] | None = None,
+    max_num_inputs: int = 4,
+    max_subgraph_size: int | None = None,
+    forbidden_attr: str = "forbidden",
+    forbid_sources_and_sinks: bool = False,
+    ordering: Ordering = "toposort",
+    oracle: Callable[[StateT, set[NodeT]], StateT | None],
+    initial_oracle_state: StateT,
+) -> Iterator[set[NodeT]]: ...
+
+
 def grow_zero_output_convex_subgraphs(
     graph: nx.DiGraph[NodeT],
     seed_nodes: set[NodeT],
@@ -514,37 +546,10 @@ def grow_zero_output_convex_subgraphs(
         except KeyError as exc:
             raise ValueError(f"seed node {node!r} is not present in the graph set") from exc
 
-    oracle_uses_state = False
-    if oracle is not None:
-        try:
-            signature = inspect.signature(oracle)
-            parameters = [
-                parameter
-                for parameter in signature.parameters.values()
-                if parameter.kind
-                in (
-                    inspect.Parameter.POSITIONAL_ONLY,
-                    inspect.Parameter.POSITIONAL_OR_KEYWORD,
-                )
-            ]
-            required_parameters = [
-                parameter
-                for parameter in parameters
-                if parameter.default is inspect.Parameter.empty
-            ]
-            oracle_uses_state = len(required_parameters) >= 2 or any(
-                parameter.kind == inspect.Parameter.VAR_POSITIONAL
-                for parameter in signature.parameters.values()
-            )
-        except (TypeError, ValueError):
-            oracle_uses_state = False
-
     def oracle_indices(state: object | None, indices: list[int]) -> object | None:
         nodes = {node_order[index] for index in indices}
         assert oracle is not None
-        if oracle_uses_state:
-            return oracle(state, nodes)
-        return oracle(nodes)
+        return oracle(state, nodes)
 
     result = grow_zero_output_graph_input(
         payload,

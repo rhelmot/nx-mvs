@@ -78,7 +78,8 @@ def _launch_distance(
                 max_num_inputs=max_num_inputs,
                 max_subgraph_size=max_subgraph_size,
                 forbid_sources_and_sinks=False,
-                oracle=lambda nodes, target=target: set(nodes).issubset(target),
+                oracle=lambda _state, nodes, target=target: True if set(nodes).issubset(target) else None,
+                initial_oracle_state=True,
             )
         }
         if target not in seen:

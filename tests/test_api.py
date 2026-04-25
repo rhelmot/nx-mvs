@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Hashable
 import unittest
 
 import networkx as nx
@@ -354,7 +355,8 @@ class TestMVS(unittest.TestCase):
                 seed_nodes={"a"},
                 max_num_inputs=1,
                 forbid_sources_and_sinks=False,
-                oracle=lambda nodes: len(nodes) < 2,
+                oracle=lambda _state, nodes: True if len(nodes) < 2 else None,
+                initial_oracle_state=True,
             )
         }
 
@@ -417,9 +419,9 @@ class TestMVS(unittest.TestCase):
             ]
         )
 
-        seen_states: dict[frozenset[str], object] = {}
+        seen_states: dict[frozenset[Hashable], object] = {}
 
-        def oracle(state: object, nodes: set[str]) -> object | None:
+        def oracle(state: object, nodes: set[Hashable]) -> object | None:
             seen_states[frozenset(nodes)] = state
             return frozenset(nodes)
 
@@ -468,9 +470,9 @@ class TestMVS(unittest.TestCase):
             ]
         )
 
-        seen_states: dict[frozenset[str], object] = {}
+        seen_states: dict[frozenset[Hashable], object] = {}
 
-        def oracle(state: object, nodes: set[str]) -> object | None:
+        def oracle(state: object, nodes: set[Hashable]) -> object | None:
             seen_states[frozenset(nodes)] = state
             return frozenset(nodes)
 
