@@ -409,6 +409,8 @@ class TestSampling(unittest.TestCase):
         self.assertEqual(1, _launch_distance(graph, target=target, samples=with_kernels))
 
     def test_real_graph_samples_are_unique_and_valid(self) -> None:
+        if not (REPO_ROOT / "data/graph.dot").exists() or not (REPO_ROOT / "graph-alt.dot").exists():
+            self.skipTest("repo-level graph DOT test inputs are not present")
         graph = _read_dot_graph(REPO_ROOT / "data/graph.dot")
         alternate_graph = _read_dot_graph(REPO_ROOT / "graph-alt.dot")
         validate = _build_validator(graph, alternate_graph)

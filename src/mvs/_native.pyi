@@ -72,4 +72,5 @@ def grow_zero_output_graph_input(
     max_num_inputs: int,
     max_subgraph_size: int = -1,
     oracle: object | None = None,
+    initial_oracle_state: object | None = None,
 ) -> SolveResult: ...

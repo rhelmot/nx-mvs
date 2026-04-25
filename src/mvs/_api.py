@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Hashable, Iterator
+import inspect
 import math
 from typing import Literal, TypeVar, cast
 
@@ -491,7 +492,8 @@ def grow_zero_output_convex_subgraphs(
     forbidden_attr: str = "forbidden",
     forbid_sources_and_sinks: bool = False,
     ordering: Ordering = "toposort",
-    oracle: Callable[[set[NodeT]], bool] | None = None,
+    oracle: Callable[..., object | None] | None = None,
+    initial_oracle_state: object | None = None,
 ) -> Iterator[set[NodeT]]:
     native_max_subgraph_size = -1 if max_subgraph_size is None else max_subgraph_size
     if native_max_subgraph_size < -1:
@@ -512,18 +514,45 @@ def grow_zero_output_convex_subgraphs(
         except KeyError as exc:
             raise ValueError(f"seed node {node!r} is not present in the graph set") from exc
 
-    oracle_indices = (
-        (lambda indices: oracle({node_order[index] for index in indices}))
-        if oracle is not None
-        else None
-    )
+    oracle_uses_state = False
+    if oracle is not None:
+        try:
+            signature = inspect.signature(oracle)
+            parameters = [
+                parameter
+                for parameter in signature.parameters.values()
+                if parameter.kind
+                in (
+                    inspect.Parameter.POSITIONAL_ONLY,
+                    inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                )
+            ]
+            required_parameters = [
+                parameter
+                for parameter in parameters
+                if parameter.default is inspect.Parameter.empty
+            ]
+            oracle_uses_state = len(required_parameters) >= 2 or any(
+                parameter.kind == inspect.Parameter.VAR_POSITIONAL
+                for parameter in signature.parameters.values()
+            )
+        except (TypeError, ValueError):
+            oracle_uses_state = False
+
+    def oracle_indices(state: object | None, indices: list[int]) -> object | None:
+        nodes = {node_order[index] for index in indices}
+        assert oracle is not None
+        if oracle_uses_state:
+            return oracle(state, nodes)
+        return oracle(nodes)
 
     result = grow_zero_output_graph_input(
         payload,
         seed_indices,
         max_num_inputs,
         native_max_subgraph_size,
-        oracle_indices,
+        oracle_indices if oracle is not None else None,
+        initial_oracle_state,
     )
     return ({node_order[index] for index in subgraph} for subgraph in result.subgraphs)
 

@@ -450,7 +450,8 @@ SolveResult grow_zero_output_graph_input(const GraphInput &input,
                                          std::vector<int> seed_nodes,
                                          int max_num_inputs,
                                          int max_subgraph_size,
-                                         nb::object oracle)
+                                         nb::object oracle,
+                                         nb::object initial_oracle_state)
 {
     if (max_num_inputs < 0)
         throw nb::value_error("I/O limits must be non-negative");
@@ -470,6 +471,9 @@ SolveResult grow_zero_output_graph_input(const GraphInput &input,
     }
 
     SolveResult result;
+    std::vector<nb::object> oracle_states;
+    oracle_states.push_back(initial_oracle_state.is_valid() ? initial_oracle_state
+                                                            : nb::none());
     StderrSilencer silence;
     nb::gil_scoped_release release;
     vs_grow_zero_output_connected(
@@ -478,15 +482,26 @@ SolveResult grow_zero_output_graph_input(const GraphInput &input,
         max_num_inputs,
         max_subgraph_size,
         alternate_graph.get(),
-        [&result, &oracle](const IOSubgraph &subgraph) {
+        0,
+        [&result, &oracle, &oracle_states](const IOSubgraph &subgraph,
+                                           std::size_t state_token)
+            -> std::optional<std::size_t> {
             auto nodes = to_vector(subgraph.nodes());
             result.max_weight = std::max(result.max_weight, subgraph.weight());
             result.subgraphs.push_back(nodes);
             if (oracle.is_none())
-                return true;
+                return state_token;
 
             nb::gil_scoped_acquire acquire;
-            return nb::cast<bool>(oracle(nodes));
+            nb::object outcome = oracle(oracle_states.at(state_token), nodes);
+            if (outcome.is_none())
+                return std::nullopt;
+            if (nb::isinstance<nb::bool_>(outcome)) {
+                return nb::cast<bool>(outcome) ? std::optional<std::size_t>(state_token)
+                                               : std::nullopt;
+            }
+            oracle_states.push_back(std::move(outcome));
+            return oracle_states.size() - 1;
         });
     return result;
 }
@@ -581,5 +596,6 @@ NB_MODULE(_native, m)
         nb::arg("seed_nodes"),
         nb::arg("max_num_inputs"),
         nb::arg("max_subgraph_size") = -1,
-        nb::arg("oracle") = nb::none());
+        nb::arg("oracle") = nb::none(),
+        nb::arg("initial_oracle_state") = nb::none());
 }

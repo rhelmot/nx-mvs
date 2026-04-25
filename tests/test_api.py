@@ -406,6 +406,91 @@ class TestMVS(unittest.TestCase):
             result,
         )
 
+    def test_grow_zero_output_convex_subgraphs_threads_oracle_state(self) -> None:
+        graph = nx.DiGraph()
+        graph.add_node("p", forbidden=True)
+        graph.add_edges_from(
+            [
+                ("p", "a"),
+                ("p", "b"),
+                ("p", "c"),
+            ]
+        )
+
+        seen_states: dict[frozenset[str], object] = {}
+
+        def oracle(state: object, nodes: set[str]) -> object | None:
+            seen_states[frozenset(nodes)] = state
+            return frozenset(nodes)
+
+        result = {
+            frozenset(nodes)
+            for nodes in grow_zero_output_convex_subgraphs(
+                graph,
+                None,
+                seed_nodes={"a"},
+                max_num_inputs=1,
+                forbid_sources_and_sinks=False,
+                oracle=oracle,
+                initial_oracle_state="seed-state",
+            )
+        }
+
+        self.assertSetEqual(
+            {
+                frozenset({"a"}),
+                frozenset({"a", "b"}),
+                frozenset({"a", "c"}),
+                frozenset({"a", "b", "c"}),
+            },
+            result,
+        )
+        self.assertEqual("seed-state", seen_states[frozenset({"a"})])
+        self.assertEqual(
+            frozenset({"a"}),
+            seen_states[frozenset({"a", "b"})],
+        )
+        self.assertEqual(
+            frozenset({"a"}),
+            seen_states[frozenset({"a", "c"})],
+        )
+
+    def test_grow_zero_output_convex_subgraphs_merged_path_uses_some_parent_state(
+        self,
+    ) -> None:
+        graph = nx.DiGraph()
+        graph.add_node("p", forbidden=True)
+        graph.add_edges_from(
+            [
+                ("p", "a"),
+                ("p", "b"),
+                ("p", "c"),
+            ]
+        )
+
+        seen_states: dict[frozenset[str], object] = {}
+
+        def oracle(state: object, nodes: set[str]) -> object | None:
+            seen_states[frozenset(nodes)] = state
+            return frozenset(nodes)
+
+        list(
+            grow_zero_output_convex_subgraphs(
+                graph,
+                None,
+                seed_nodes={"a"},
+                max_num_inputs=1,
+                forbid_sources_and_sinks=False,
+                oracle=oracle,
+                initial_oracle_state="seed-state",
+            )
+        )
+
+        self.assertIn(
+            seen_states[frozenset({"a", "b", "c"})],
+            {frozenset({"a", "b"}), frozenset({"a", "c"})},
+        )
+
     def test_zero_output_role_reversal_respects_original_input_bound(self) -> None:
         graph = nx.DiGraph()
         graph.add_edges_from(
