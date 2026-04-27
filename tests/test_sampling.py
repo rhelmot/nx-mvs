@@ -32,6 +32,9 @@ def _sample_sets(
     ordering: Literal["default", "sort", "toposort"] = "toposort",
     sampling_passes: int = 1,
     exact_kernel_size: int = 0,
+    forbidden_attr: str | None = "forbidden",
+    body_forbidden_attr: str | None = None,
+    input_forbidden_attr: str | None = None,
 ) -> set[frozenset[str]]:
     return {
         frozenset(nodes)
@@ -51,6 +54,9 @@ def _sample_sets(
             ordering=ordering,
             sampling_passes=sampling_passes,
             exact_kernel_size=exact_kernel_size,
+            forbidden_attr=forbidden_attr,
+            body_forbidden_attr=body_forbidden_attr,
+            input_forbidden_attr=input_forbidden_attr,
         )
     }
 
@@ -63,6 +69,9 @@ def _launch_distance(
     alternate_graph: nx.DiGraph[str] | None = None,
     max_num_inputs: int = 1,
     max_subgraph_size: int = 10,
+    forbidden_attr: str | None = "forbidden",
+    body_forbidden_attr: str | None = None,
+    input_forbidden_attr: str | None = None,
 ) -> int | None:
     best: int | None = None
     for sample in samples:
@@ -80,6 +89,9 @@ def _launch_distance(
                 forbid_sources_and_sinks=False,
                 oracle=lambda _state, nodes, target=target: True if set(nodes).issubset(target) else None,
                 initial_oracle_state=True,
+                forbidden_attr=forbidden_attr,
+                body_forbidden_attr=body_forbidden_attr,
+                input_forbidden_attr=input_forbidden_attr,
             )
         }
         if target not in seen:
@@ -113,7 +125,8 @@ def _build_validator(
     pred_alt = [0] * node_count
     succ_alt = [0] * node_count
     undirected_main = [0] * node_count
-    forbidden = 0
+    body_forbidden = 0
+    input_forbidden = 0
 
     for current_graph, pred_masks, succ_masks, is_main in (
         (graph, pred_main, succ_main, True),
@@ -123,7 +136,12 @@ def _build_validator(
             continue
         for node, attrs in current_graph.nodes(data=True):
             if as_bool(attrs.get("forbidden", False)):
-                forbidden |= 1 << node_index[node]
+                body_forbidden |= 1 << node_index[node]
+                input_forbidden |= 1 << node_index[node]
+            if as_bool(attrs.get("body_forbidden", False)):
+                body_forbidden |= 1 << node_index[node]
+            if as_bool(attrs.get("input_forbidden", False)):
+                input_forbidden |= 1 << node_index[node]
         for source, target in current_graph.edges():
             u = node_index[source]
             v = node_index[target]
@@ -231,7 +249,8 @@ def _build_validator(
 
     def validate(nodes: Iterable[str]) -> None:
         mask = mask_from_nodes(nodes)
-        assert (mask & forbidden) == 0
+        assert (mask & body_forbidden) == 0
+        assert (input_mask(mask) & input_forbidden) == 0
         assert input_mask(mask).bit_count() <= 4
         assert num_outputs(mask) == 0
         assert connected_with_inputs(mask)
@@ -262,6 +281,8 @@ class TestSampling(unittest.TestCase):
             max_children_per_state=2,
             size_bin_width=1,
             thicken_radius=0,
+            forbidden_attr=None,
+            body_forbidden_attr="forbidden",
         )
         thick = _sample_sets(
             graph,
@@ -270,14 +291,34 @@ class TestSampling(unittest.TestCase):
             max_children_per_state=2,
             size_bin_width=1,
             thicken_radius=2,
+            forbidden_attr=None,
+            body_forbidden_attr="forbidden",
         )
 
         self.assertTrue(thin < thick)
         target = frozenset({"a", "b", "c", "d"})
         self.assertNotIn(target, thin)
         self.assertIn(target, thick)
-        self.assertEqual(2, _launch_distance(graph, target=target, samples=thin))
-        self.assertEqual(0, _launch_distance(graph, target=target, samples=thick))
+        self.assertEqual(
+            2,
+            _launch_distance(
+                graph,
+                target=target,
+                samples=thin,
+                forbidden_attr=None,
+                body_forbidden_attr="forbidden",
+            ),
+        )
+        self.assertEqual(
+            0,
+            _launch_distance(
+                graph,
+                target=target,
+                samples=thick,
+                forbidden_attr=None,
+                body_forbidden_attr="forbidden",
+            ),
+        )
 
     def test_sampling_connected_zero_output_does_not_use_input_input_edges(
         self,
@@ -301,6 +342,8 @@ class TestSampling(unittest.TestCase):
             max_children_per_state=4,
             size_bin_width=1,
             thicken_radius=1,
+            forbidden_attr=None,
+            body_forbidden_attr="forbidden",
         )
 
         self.assertNotIn(frozenset({"b", "c"}), samples)
@@ -326,6 +369,8 @@ class TestSampling(unittest.TestCase):
                 0,
                 forbid_sources_and_sinks=False,
                 connected_only=True,
+                forbidden_attr=None,
+                body_forbidden_attr="forbidden",
             )
         }
         self.assertIn(frozenset({"d"}), exact)
@@ -341,6 +386,8 @@ class TestSampling(unittest.TestCase):
             thicken_radius=0,
             bucket_by_num_inputs=False,
             minimal_node_bin_width=0,
+            forbidden_attr=None,
+            body_forbidden_attr="forbidden",
         )
         extended = _sample_sets(
             graph,
@@ -352,6 +399,8 @@ class TestSampling(unittest.TestCase):
             thicken_radius=0,
             bucket_by_num_inputs=True,
             minimal_node_bin_width=1,
+            forbidden_attr=None,
+            body_forbidden_attr="forbidden",
         )
 
         self.assertIn(frozenset({"d"}), extended)
@@ -381,6 +430,8 @@ class TestSampling(unittest.TestCase):
             thicken_radius=0,
             ordering="default",
             sampling_passes=1,
+            forbidden_attr=None,
+            body_forbidden_attr="forbidden",
         )
         multi_pass = _sample_sets(
             graph,
@@ -391,12 +442,31 @@ class TestSampling(unittest.TestCase):
             thicken_radius=0,
             ordering="default",
             sampling_passes=2,
+            forbidden_attr=None,
+            body_forbidden_attr="forbidden",
         )
 
         target = frozenset({"a", "b"})
         self.assertGreater(len(multi_pass), len(single_pass))
-        self.assertIsNone(_launch_distance(graph, target=target, samples=single_pass))
-        self.assertEqual(0, _launch_distance(graph, target=target, samples=multi_pass))
+        self.assertIsNone(
+            _launch_distance(
+                graph,
+                target=target,
+                samples=single_pass,
+                forbidden_attr=None,
+                body_forbidden_attr="forbidden",
+            )
+        )
+        self.assertEqual(
+            0,
+            _launch_distance(
+                graph,
+                target=target,
+                samples=multi_pass,
+                forbidden_attr=None,
+                body_forbidden_attr="forbidden",
+            ),
+        )
 
     def test_exact_kernel_floor_restores_small_launch_points(self) -> None:
         graph = nx.DiGraph()
@@ -421,6 +491,8 @@ class TestSampling(unittest.TestCase):
             ordering="default",
             sampling_passes=1,
             exact_kernel_size=0,
+            forbidden_attr=None,
+            body_forbidden_attr="forbidden",
         )
         with_kernels = _sample_sets(
             graph,
@@ -432,13 +504,32 @@ class TestSampling(unittest.TestCase):
             ordering="default",
             sampling_passes=1,
             exact_kernel_size=1,
+            forbidden_attr=None,
+            body_forbidden_attr="forbidden",
         )
 
         target = frozenset({"a", "b"})
         self.assertNotIn(frozenset({"a"}), heuristic_only)
         self.assertIn(frozenset({"a"}), with_kernels)
-        self.assertIsNone(_launch_distance(graph, target=target, samples=heuristic_only))
-        self.assertEqual(1, _launch_distance(graph, target=target, samples=with_kernels))
+        self.assertIsNone(
+            _launch_distance(
+                graph,
+                target=target,
+                samples=heuristic_only,
+                forbidden_attr=None,
+                body_forbidden_attr="forbidden",
+            )
+        )
+        self.assertEqual(
+            1,
+            _launch_distance(
+                graph,
+                target=target,
+                samples=with_kernels,
+                forbidden_attr=None,
+                body_forbidden_attr="forbidden",
+            ),
+        )
 
     def test_real_graph_samples_are_unique_and_valid(self) -> None:
         if not (REPO_ROOT / "data/graph.dot").exists() or not (REPO_ROOT / "data/graph-alt.dot").exists():

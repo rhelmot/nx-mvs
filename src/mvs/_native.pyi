@@ -12,6 +12,8 @@ class GraphInput:
     alternate_edges: list[tuple[int, int]]
     weights: list[float]
     forbidden: list[int]
+    body_forbidden: list[int]
+    input_forbidden: list[int]
     frequency: int
     forbid_sources_and_sinks: bool
 

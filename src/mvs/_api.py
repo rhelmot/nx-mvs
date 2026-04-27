@@ -50,7 +50,9 @@ def graph_to_input(
     alternate_graph: nx.DiGraph[NodeT] | None = None,
     weighted: bool = False,
     weight_attr: str = "weight",
-    forbidden_attr: str = "forbidden",
+    forbidden_attr: str | None = "forbidden",
+    body_forbidden_attr: str | None = None,
+    input_forbidden_attr: str | None = None,
     forbid_sources_and_sinks: bool = True,
     ordering: Ordering = "toposort",
     name: str | None = None,
@@ -59,26 +61,66 @@ def graph_to_input(
         raise ValueError("Graph must be a DAG")
     graph_nodes = set(graph.nodes)
     alternate_nodes: set[NodeT] = set()
-    graph_forbidden = {
-        node for node in graph_nodes if _as_bool(graph.nodes[node].get(forbidden_attr, False))
-    }
-    alternate_forbidden: set[NodeT] = set()
+    graph_shared_forbidden = (
+        {
+            node
+            for node in graph_nodes
+            if _as_bool(graph.nodes[node].get(forbidden_attr, False))
+        }
+        if forbidden_attr is not None
+        else set()
+    )
+    graph_body_forbidden = set(graph_shared_forbidden)
+    graph_input_forbidden = set(graph_shared_forbidden)
+    if body_forbidden_attr is not None:
+        graph_body_forbidden |= {
+            node
+            for node in graph_nodes
+            if _as_bool(graph.nodes[node].get(body_forbidden_attr, False))
+        }
+    if input_forbidden_attr is not None:
+        graph_input_forbidden |= {
+            node
+            for node in graph_nodes
+            if _as_bool(graph.nodes[node].get(input_forbidden_attr, False))
+        }
+    alternate_shared_forbidden: set[NodeT] = set()
+    alternate_body_forbidden: set[NodeT] = set()
+    alternate_input_forbidden: set[NodeT] = set()
     if alternate_graph is not None:
         if not nx.is_directed_acyclic_graph(alternate_graph):
             raise ValueError("alternate_graph must be a DAG")
         alternate_nodes = set(alternate_graph.nodes)
-        alternate_forbidden = {
-            node
-            for node in alternate_nodes
-            if _as_bool(alternate_graph.nodes[node].get(forbidden_attr, False))
-        }
+        alternate_shared_forbidden = (
+            {
+                node
+                for node in alternate_nodes
+                if _as_bool(alternate_graph.nodes[node].get(forbidden_attr, False))
+            }
+            if forbidden_attr is not None
+            else set()
+        )
+        alternate_body_forbidden = set(alternate_shared_forbidden)
+        alternate_input_forbidden = set(alternate_shared_forbidden)
+        if body_forbidden_attr is not None:
+            alternate_body_forbidden |= {
+                node
+                for node in alternate_nodes
+                if _as_bool(alternate_graph.nodes[node].get(body_forbidden_attr, False))
+            }
+        if input_forbidden_attr is not None:
+            alternate_input_forbidden |= {
+                node
+                for node in alternate_nodes
+                if _as_bool(alternate_graph.nodes[node].get(input_forbidden_attr, False))
+            }
         missing_from_alternate = graph_nodes - alternate_nodes
-        if missing_from_alternate - graph_forbidden:
+        if missing_from_alternate - (graph_body_forbidden | graph_input_forbidden):
             raise ValueError(
                 "alternate_graph may only omit nodes that are forbidden in graph"
             )
         missing_from_graph = alternate_nodes - graph_nodes
-        if missing_from_graph - alternate_forbidden:
+        if missing_from_graph - (alternate_body_forbidden | alternate_input_forbidden):
             raise ValueError(
                 "graph may only omit nodes that are forbidden in alternate_graph"
             )
@@ -103,7 +145,9 @@ def graph_to_input(
                     if node not in graph_nodes
                 )
     node_index = {node: index for index, node in enumerate(node_order)}
-    forbidden_nodes = graph_forbidden | alternate_forbidden
+    body_forbidden_nodes = graph_body_forbidden | alternate_body_forbidden
+    input_forbidden_nodes = graph_input_forbidden | alternate_input_forbidden
+    forbidden_nodes = body_forbidden_nodes & input_forbidden_nodes
 
     def node_weight(node: NodeT) -> float:
         if not weighted:
@@ -137,6 +181,14 @@ def graph_to_input(
         1 if node in forbidden_nodes else 0
         for node in node_order
     ]
+    payload.body_forbidden = [
+        1 if node in body_forbidden_nodes else 0
+        for node in node_order
+    ]
+    payload.input_forbidden = [
+        1 if node in input_forbidden_nodes else 0
+        for node in node_order
+    ]
     return payload, tuple(node_order)
 
 
@@ -149,7 +201,9 @@ def enumerate_maximum_convex_subgraphs(
     max_subgraph_size: int | None = None,
     weighted: bool = False,
     weight_attr: str = "weight",
-    forbidden_attr: str = "forbidden",
+    forbidden_attr: str | None = "forbidden",
+    body_forbidden_attr: str | None = None,
+    input_forbidden_attr: str | None = None,
     forbid_sources_and_sinks: bool = True,
     allow_zero_outputs: bool = False,
     connected_only: bool = False,
@@ -180,6 +234,8 @@ def enumerate_maximum_convex_subgraphs(
             weighted=weighted,
             weight_attr=weight_attr,
             forbidden_attr=forbidden_attr,
+            body_forbidden_attr=body_forbidden_attr,
+            input_forbidden_attr=input_forbidden_attr,
             forbid_sources_and_sinks=forbid_sources_and_sinks,
             allow_zero_outputs=allow_zero_outputs,
             connected_only=connected_only,
@@ -219,6 +275,8 @@ def enumerate_maximum_convex_subgraphs(
                 weighted=weighted,
                 weight_attr=weight_attr,
                 forbidden_attr=forbidden_attr,
+                body_forbidden_attr=body_forbidden_attr,
+                input_forbidden_attr=input_forbidden_attr,
                 forbid_sources_and_sinks=forbid_sources_and_sinks,
                 ordering=ordering,
             )
@@ -251,6 +309,8 @@ def enumerate_maximum_convex_subgraphs(
         weighted=weighted,
         weight_attr=weight_attr,
         forbidden_attr=forbidden_attr,
+        body_forbidden_attr=body_forbidden_attr,
+        input_forbidden_attr=input_forbidden_attr,
         forbid_sources_and_sinks=forbid_sources_and_sinks,
         ordering=ordering,
     )
@@ -274,7 +334,9 @@ def enumerate_convex_subgraphs(
     max_subgraph_size: int | None = None,
     weighted: bool = False,
     weight_attr: str = "weight",
-    forbidden_attr: str = "forbidden",
+    forbidden_attr: str | None = "forbidden",
+    body_forbidden_attr: str | None = None,
+    input_forbidden_attr: str | None = None,
     forbid_sources_and_sinks: bool = True,
     allow_zero_outputs: bool = False,
     connected_only: bool = False,
@@ -305,6 +367,8 @@ def enumerate_convex_subgraphs(
                     weighted=weighted,
                     weight_attr=weight_attr,
                     forbidden_attr=forbidden_attr,
+                    body_forbidden_attr=body_forbidden_attr,
+                    input_forbidden_attr=input_forbidden_attr,
                     forbid_sources_and_sinks=forbid_sources_and_sinks,
                     ordering=ordering,
                 )
@@ -333,6 +397,8 @@ def enumerate_convex_subgraphs(
         weighted=weighted,
         weight_attr=weight_attr,
         forbidden_attr=forbidden_attr,
+        body_forbidden_attr=body_forbidden_attr,
+        input_forbidden_attr=input_forbidden_attr,
         forbid_sources_and_sinks=forbid_sources_and_sinks,
         ordering=ordering,
     )
@@ -363,7 +429,9 @@ def sample_zero_output_convex_subgraphs(
     max_subgraph_size: int | None = None,
     weighted: bool = False,
     weight_attr: str = "weight",
-    forbidden_attr: str = "forbidden",
+    forbidden_attr: str | None = "forbidden",
+    body_forbidden_attr: str | None = None,
+    input_forbidden_attr: str | None = None,
     forbid_sources_and_sinks: bool = True,
     ordering: Ordering = "toposort",
     max_states_expanded: int = 10000,
@@ -436,6 +504,8 @@ def sample_zero_output_convex_subgraphs(
                     weighted=weighted,
                     weight_attr=weight_attr,
                     forbidden_attr=forbidden_attr,
+                    body_forbidden_attr=body_forbidden_attr,
+                    input_forbidden_attr=input_forbidden_attr,
                     forbid_sources_and_sinks=forbid_sources_and_sinks,
                     allow_zero_outputs=False,
                     connected_only=True,
@@ -454,6 +524,8 @@ def sample_zero_output_convex_subgraphs(
                     weighted=weighted,
                     weight_attr=weight_attr,
                     forbidden_attr=forbidden_attr,
+                    body_forbidden_attr=body_forbidden_attr,
+                    input_forbidden_attr=input_forbidden_attr,
                     forbid_sources_and_sinks=forbid_sources_and_sinks,
                     ordering=pass_ordering,
                 )
@@ -490,7 +562,9 @@ def grow_zero_output_convex_subgraphs(
     alternate_graph: nx.DiGraph[NodeT] | None = None,
     max_num_inputs: int = 4,
     max_subgraph_size: int | None = None,
-    forbidden_attr: str = "forbidden",
+    forbidden_attr: str | None = "forbidden",
+    body_forbidden_attr: str | None = None,
+    input_forbidden_attr: str | None = None,
     forbid_sources_and_sinks: bool = False,
     ordering: Ordering = "toposort",
     oracle: None = None,
@@ -506,7 +580,9 @@ def grow_zero_output_convex_subgraphs(
     alternate_graph: nx.DiGraph[NodeT] | None = None,
     max_num_inputs: int = 4,
     max_subgraph_size: int | None = None,
-    forbidden_attr: str = "forbidden",
+    forbidden_attr: str | None = "forbidden",
+    body_forbidden_attr: str | None = None,
+    input_forbidden_attr: str | None = None,
     forbid_sources_and_sinks: bool = False,
     ordering: Ordering = "toposort",
     oracle: Callable[[StateT, set[NodeT]], StateT | None],
@@ -521,7 +597,9 @@ def grow_zero_output_convex_subgraphs(
     alternate_graph: nx.DiGraph[NodeT] | None = None,
     max_num_inputs: int = 4,
     max_subgraph_size: int | None = None,
-    forbidden_attr: str = "forbidden",
+    forbidden_attr: str | None = "forbidden",
+    body_forbidden_attr: str | None = None,
+    input_forbidden_attr: str | None = None,
     forbid_sources_and_sinks: bool = False,
     ordering: Ordering = "toposort",
     oracle: Callable[..., object | None] | None = None,
@@ -535,6 +613,8 @@ def grow_zero_output_convex_subgraphs(
         graph,
         alternate_graph=alternate_graph,
         forbidden_attr=forbidden_attr,
+        body_forbidden_attr=body_forbidden_attr,
+        input_forbidden_attr=input_forbidden_attr,
         forbid_sources_and_sinks=forbid_sources_and_sinks,
         ordering=ordering,
     )
@@ -572,7 +652,7 @@ def _iter_convex_subgraphs(
     max_subgraph_size: int,
     weighted: bool,
     weight_attr: str,
-    forbidden_attr: str,
+    forbidden_attr: str | None,
     forbid_sources_and_sinks: bool,
     allow_zero_outputs: bool,
     connected_only: bool,

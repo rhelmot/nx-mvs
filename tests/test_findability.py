@@ -31,6 +31,8 @@ class TestFindability(unittest.TestCase):
             max_children_per_state=1,
             size_bin_width=1,
             exact_kernel_size=1,
+            forbidden_attr=None,
+            body_forbidden_attr="forbidden",
         )
 
         self.assertTrue(result.found)
@@ -69,6 +71,8 @@ class TestFindability(unittest.TestCase):
                 max_children_per_state=1,
                 size_bin_width=1,
                 exact_kernel_size=1,
+                forbidden_attr=None,
+                body_forbidden_attr="forbidden",
             )
 
     def test_measure_findability_respects_alternate_graph(self) -> None:
@@ -106,4 +110,6 @@ class TestFindability(unittest.TestCase):
                 max_children_per_state=1,
                 size_bin_width=1,
                 exact_kernel_size=1,
+                forbidden_attr=None,
+                body_forbidden_attr="forbidden",
             )

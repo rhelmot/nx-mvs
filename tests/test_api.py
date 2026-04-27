@@ -16,6 +16,7 @@ from mvs import (
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+BODY_ONLY_FORBIDDEN = {"forbidden_attr": None, "body_forbidden_attr": "forbidden"}
 
 
 def read_dimacs_graph(path: Path, *, weighted: bool) -> nx.DiGraph[int]:
@@ -82,6 +83,7 @@ class TestMVS(unittest.TestCase):
                 1,
                 forbid_sources_and_sinks=False,
                 allow_zero_outputs=True,
+                **BODY_ONLY_FORBIDDEN,
             )
         }
         self.assertSetEqual({frozenset({"mid", "sink"})}, result)
@@ -107,6 +109,7 @@ class TestMVS(unittest.TestCase):
                 weighted=True,
                 forbid_sources_and_sinks=False,
                 allow_zero_outputs=True,
+                **BODY_ONLY_FORBIDDEN,
             )
         }
         self.assertSetEqual({frozenset({"mid", "sink"})}, result)
@@ -148,6 +151,7 @@ class TestMVS(unittest.TestCase):
                 1,
                 forbid_sources_and_sinks=False,
                 allow_zero_outputs=True,
+                **BODY_ONLY_FORBIDDEN,
             )
         }
         self.assertSetEqual(
@@ -158,6 +162,53 @@ class TestMVS(unittest.TestCase):
             },
             result,
         )
+
+    def test_body_forbidden_nodes_may_still_appear_as_inputs(self) -> None:
+        graph = nx.DiGraph()
+        graph.add_node("i", body_forbidden=True)
+        graph.add_edges_from(
+            [
+                ("i", "a"),
+            ]
+        )
+
+        result = {
+            frozenset(nodes)
+            for nodes in enumerate_convex_subgraphs(
+                graph,
+                1,
+                1,
+                body_forbidden_attr="body_forbidden",
+                forbid_sources_and_sinks=False,
+            )
+        }
+
+        self.assertIn(frozenset({"a"}), result)
+        self.assertNotIn(frozenset({"i"}), result)
+
+    def test_input_forbidden_nodes_may_still_appear_as_body(self) -> None:
+        graph = nx.DiGraph()
+        graph.add_node("i", input_forbidden=True)
+        graph.add_edges_from(
+            [
+                ("i", "a"),
+            ]
+        )
+
+        result = {
+            frozenset(nodes)
+            for nodes in enumerate_convex_subgraphs(
+                graph,
+                1,
+                1,
+                input_forbidden_attr="input_forbidden",
+                forbid_sources_and_sinks=False,
+                allow_zero_outputs=True,
+            )
+        }
+
+        self.assertNotIn(frozenset({"a"}), result)
+        self.assertIn(frozenset({"i", "a"}), result)
 
     def test_exhaustive_enumeration_works_without_explicit_forbidden_nodes(self) -> None:
         graph = nx.DiGraph()
@@ -195,6 +246,7 @@ class TestMVS(unittest.TestCase):
                 1,
                 1,
                 forbid_sources_and_sinks=False,
+                **BODY_ONLY_FORBIDDEN,
             )
         }
         with_zero_outputs = {
@@ -205,6 +257,7 @@ class TestMVS(unittest.TestCase):
                 1,
                 forbid_sources_and_sinks=False,
                 allow_zero_outputs=True,
+                **BODY_ONLY_FORBIDDEN,
             )
         }
         self.assertNotIn(frozenset({"mid", "sink"}), without_zero_outputs)
@@ -227,6 +280,7 @@ class TestMVS(unittest.TestCase):
                 1,
                 0,
                 forbid_sources_and_sinks=False,
+                **BODY_ONLY_FORBIDDEN,
             )
         }
         self.assertSetEqual({frozenset({"mid", "sink"})}, result)
@@ -253,6 +307,7 @@ class TestMVS(unittest.TestCase):
                 max_samples=4,
                 max_children_per_state=1,
                 size_bin_width=1,
+                **BODY_ONLY_FORBIDDEN,
             )
         ]
 
@@ -297,6 +352,7 @@ class TestMVS(unittest.TestCase):
                 max_samples=8,
                 max_children_per_state=2,
                 size_bin_width=1,
+                **BODY_ONLY_FORBIDDEN,
             )
         ]
 
@@ -323,6 +379,7 @@ class TestMVS(unittest.TestCase):
                 seed_nodes={"a"},
                 max_num_inputs=1,
                 forbid_sources_and_sinks=False,
+                **BODY_ONLY_FORBIDDEN,
             )
         }
 
@@ -357,6 +414,7 @@ class TestMVS(unittest.TestCase):
                 forbid_sources_and_sinks=False,
                 oracle=lambda _state, nodes: True if len(nodes) < 2 else None,
                 initial_oracle_state=True,
+                **BODY_ONLY_FORBIDDEN,
             )
         }
 
@@ -396,6 +454,7 @@ class TestMVS(unittest.TestCase):
                 seed_nodes={"a"},
                 max_num_inputs=1,
                 forbid_sources_and_sinks=False,
+                **BODY_ONLY_FORBIDDEN,
             )
         }
 
@@ -435,6 +494,7 @@ class TestMVS(unittest.TestCase):
                 forbid_sources_and_sinks=False,
                 oracle=oracle,
                 initial_oracle_state="seed-state",
+                **BODY_ONLY_FORBIDDEN,
             )
         }
 
@@ -485,6 +545,7 @@ class TestMVS(unittest.TestCase):
                 forbid_sources_and_sinks=False,
                 oracle=oracle,
                 initial_oracle_state="seed-state",
+                **BODY_ONLY_FORBIDDEN,
             )
         )
 
@@ -554,6 +615,7 @@ class TestMVS(unittest.TestCase):
                 weighted=True,
                 forbid_sources_and_sinks=False,
                 allow_zero_outputs=True,
+                **BODY_ONLY_FORBIDDEN,
             )
         }
 
@@ -580,6 +642,7 @@ class TestMVS(unittest.TestCase):
                 1,
                 forbid_sources_and_sinks=False,
                 allow_zero_outputs=True,
+                **BODY_ONLY_FORBIDDEN,
             )
         }
 
@@ -605,6 +668,7 @@ class TestMVS(unittest.TestCase):
                 1,
                 forbid_sources_and_sinks=False,
                 allow_zero_outputs=True,
+                **BODY_ONLY_FORBIDDEN,
             )
         }
         connected = {
@@ -616,6 +680,7 @@ class TestMVS(unittest.TestCase):
                 forbid_sources_and_sinks=False,
                 allow_zero_outputs=True,
                 connected_only=True,
+                **BODY_ONLY_FORBIDDEN,
             )
         }
 
@@ -647,6 +712,7 @@ class TestMVS(unittest.TestCase):
                 weighted=True,
                 forbid_sources_and_sinks=False,
                 allow_zero_outputs=True,
+                **BODY_ONLY_FORBIDDEN,
             )
         }
         connected = {
@@ -659,6 +725,7 @@ class TestMVS(unittest.TestCase):
                 forbid_sources_and_sinks=False,
                 allow_zero_outputs=True,
                 connected_only=True,
+                **BODY_ONLY_FORBIDDEN,
             )
         }
 
@@ -687,6 +754,7 @@ class TestMVS(unittest.TestCase):
                 1,
                 forbid_sources_and_sinks=False,
                 allow_zero_outputs=True,
+                **BODY_ONLY_FORBIDDEN,
             )
         }
         connected = {
@@ -698,6 +766,7 @@ class TestMVS(unittest.TestCase):
                 forbid_sources_and_sinks=False,
                 allow_zero_outputs=True,
                 connected_only=True,
+                **BODY_ONLY_FORBIDDEN,
             )
         }
 
@@ -732,6 +801,7 @@ class TestMVS(unittest.TestCase):
                 1,
                 forbid_sources_and_sinks=False,
                 allow_zero_outputs=True,
+                **BODY_ONLY_FORBIDDEN,
             )
         }
         with_alternate = {
@@ -743,6 +813,7 @@ class TestMVS(unittest.TestCase):
                 alternate_graph=alternate_graph,
                 forbid_sources_and_sinks=False,
                 allow_zero_outputs=True,
+                **BODY_ONLY_FORBIDDEN,
             )
         }
 
@@ -780,6 +851,7 @@ class TestMVS(unittest.TestCase):
                 forbid_sources_and_sinks=False,
                 allow_zero_outputs=True,
                 connected_only=True,
+                **BODY_ONLY_FORBIDDEN,
             )
         }
         connected_with_alternate = {
@@ -792,6 +864,7 @@ class TestMVS(unittest.TestCase):
                 forbid_sources_and_sinks=False,
                 allow_zero_outputs=True,
                 connected_only=True,
+                **BODY_ONLY_FORBIDDEN,
             )
         }
 
@@ -829,6 +902,7 @@ class TestMVS(unittest.TestCase):
                 alternate_graph=alternate_graph,
                 forbid_sources_and_sinks=False,
                 connected_only=True,
+                **BODY_ONLY_FORBIDDEN,
             )
         }
 
@@ -877,6 +951,7 @@ class TestMVS(unittest.TestCase):
                 alternate_graph=alternate_graph,
                 forbid_sources_and_sinks=False,
                 connected_only=True,
+                **BODY_ONLY_FORBIDDEN,
             )
         )
         unique = {frozenset(nodes) for nodes in result}
@@ -909,6 +984,7 @@ class TestMVS(unittest.TestCase):
                 alternate_graph=alternate_graph,
                 forbid_sources_and_sinks=False,
                 connected_only=True,
+                **BODY_ONLY_FORBIDDEN,
             )
         }
 
@@ -991,6 +1067,7 @@ class TestMVS(unittest.TestCase):
                 alternate_graph=alternate_graph,
                 forbid_sources_and_sinks=False,
                 connected_only=True,
+                **BODY_ONLY_FORBIDDEN,
             )
         }
 
@@ -1015,6 +1092,7 @@ class TestMVS(unittest.TestCase):
                 1,
                 1,
                 forbid_sources_and_sinks=False,
+                **BODY_ONLY_FORBIDDEN,
             )
         }
 
@@ -1060,7 +1138,15 @@ class TestMVS(unittest.TestCase):
             ]
         )
 
-        result = {frozenset(nodes) for nodes in enumerate_convex_subgraphs(graph, 1, 1)}
+        result = {
+            frozenset(nodes)
+            for nodes in enumerate_convex_subgraphs(
+                graph,
+                1,
+                1,
+                **BODY_ONLY_FORBIDDEN,
+            )
+        }
         self.assertSetEqual(
             {
                 frozenset({"a"}),
@@ -1089,6 +1175,7 @@ class TestMVS(unittest.TestCase):
                 max_subgraph_size=1,
                 forbid_sources_and_sinks=False,
                 allow_zero_outputs=True,
+                **BODY_ONLY_FORBIDDEN,
             )
         }
 
@@ -1113,6 +1200,7 @@ class TestMVS(unittest.TestCase):
                 1,
                 forbid_sources_and_sinks=False,
                 allow_zero_outputs=True,
+                **BODY_ONLY_FORBIDDEN,
             )
         }
         connected = {
@@ -1124,6 +1212,7 @@ class TestMVS(unittest.TestCase):
                 forbid_sources_and_sinks=False,
                 allow_zero_outputs=True,
                 connected_only=True,
+                **BODY_ONLY_FORBIDDEN,
             )
         }
 
@@ -1151,6 +1240,7 @@ class TestMVS(unittest.TestCase):
                 max_subgraph_size=1,
                 forbid_sources_and_sinks=False,
                 connected_only=True,
+                **BODY_ONLY_FORBIDDEN,
             )
         }
 
@@ -1178,6 +1268,7 @@ class TestMVS(unittest.TestCase):
                 weighted=True,
                 forbid_sources_and_sinks=False,
                 allow_zero_outputs=True,
+                **BODY_ONLY_FORBIDDEN,
             )
         }
         connected = {
@@ -1190,6 +1281,7 @@ class TestMVS(unittest.TestCase):
                 forbid_sources_and_sinks=False,
                 allow_zero_outputs=True,
                 connected_only=True,
+                **BODY_ONLY_FORBIDDEN,
             )
         }
 
@@ -1217,6 +1309,7 @@ class TestMVS(unittest.TestCase):
                 max_subgraph_size=1,
                 weighted=True,
                 forbid_sources_and_sinks=False,
+                **BODY_ONLY_FORBIDDEN,
             )
         }
 

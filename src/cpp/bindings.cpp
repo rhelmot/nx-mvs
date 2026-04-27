@@ -29,6 +29,8 @@ struct GraphInput {
     std::vector<std::pair<int, int>> alternate_edges;
     std::vector<double> weights;
     std::vector<uint8_t> forbidden;
+    std::vector<uint8_t> body_forbidden;
+    std::vector<uint8_t> input_forbidden;
     int frequency = 0;
     bool forbid_sources_and_sinks = true;
 };
@@ -90,6 +92,12 @@ void validate_graph_input(const GraphInput &input)
         throw nb::value_error("weights must be empty or have length num_nodes");
     if (!input.forbidden.empty() && input.forbidden.size() != input.num_nodes)
         throw nb::value_error("forbidden must be empty or have length num_nodes");
+    if (!input.body_forbidden.empty() &&
+        input.body_forbidden.size() != input.num_nodes)
+        throw nb::value_error("body_forbidden must be empty or have length num_nodes");
+    if (!input.input_forbidden.empty() &&
+        input.input_forbidden.size() != input.num_nodes)
+        throw nb::value_error("input_forbidden must be empty or have length num_nodes");
     for (const auto &[source, target] : input.edges) {
         if (source < 0 || source >= input.num_nodes || target < 0 || target >= input.num_nodes) {
             throw nb::value_error("edge endpoint out of range");
@@ -100,6 +108,24 @@ void validate_graph_input(const GraphInput &input)
             throw nb::value_error("alternate edge endpoint out of range");
         }
     }
+}
+
+std::pair<bool, bool> node_forbidden_flags(const GraphInput &input, int node)
+{
+    bool body_forbidden = false;
+    bool input_forbidden = false;
+    if (!input.forbidden.empty() &&
+        input.forbidden[static_cast<std::size_t>(node)] != 0) {
+        body_forbidden = true;
+        input_forbidden = true;
+    }
+    if (!input.body_forbidden.empty() &&
+        input.body_forbidden[static_cast<std::size_t>(node)] != 0)
+        body_forbidden = true;
+    if (!input.input_forbidden.empty() &&
+        input.input_forbidden[static_cast<std::size_t>(node)] != 0)
+        input_forbidden = true;
+    return {body_forbidden, input_forbidden};
 }
 
 std::unique_ptr<DFG> make_graph(const GraphInput &input,
@@ -130,10 +156,12 @@ std::unique_ptr<DFG> make_graph(const GraphInput &input,
         for (int node = 0; node < input.num_nodes; ++node) {
             if (!input.weights.empty())
                 graph->weight(node) = input.weights[static_cast<std::size_t>(node)];
-            if (!input.forbidden.empty() &&
-                input.forbidden[static_cast<std::size_t>(node)] != 0) {
-                graph->set_forbidden(node);
-            }
+            auto [body_forbidden, input_forbidden] =
+                node_forbidden_flags(input, node);
+            if (body_forbidden)
+                graph->set_body_forbidden(node);
+            if (input_forbidden)
+                graph->set_input_forbidden(node);
         }
         for (const auto &[source, target] : input.edges)
             graph->add_edge(source, target);
@@ -165,10 +193,11 @@ std::unique_ptr<DFG> make_graph(const GraphInput &input,
     for (int node = 0; node < input.num_nodes; ++node) {
         if (!input.weights.empty())
             graph->weight(node) = input.weights[static_cast<std::size_t>(node)];
-        if (!input.forbidden.empty() &&
-            input.forbidden[static_cast<std::size_t>(node)] != 0) {
-            graph->set_forbidden(node);
-        }
+        auto [body_forbidden, input_forbidden] = node_forbidden_flags(input, node);
+        if (body_forbidden)
+            graph->set_body_forbidden(node);
+        if (input_forbidden)
+            graph->set_input_forbidden(node);
     }
     for (const auto &[source, target] : input.edges)
         graph->add_edge(source, target);
@@ -187,10 +216,11 @@ std::unique_ptr<DFG> make_alternate_graph(const GraphInput &input)
         input.frequency,
         false);
     for (int node = 0; node < input.num_nodes; ++node) {
-        if (!input.forbidden.empty() &&
-            input.forbidden[static_cast<std::size_t>(node)] != 0) {
-            graph->set_forbidden(node);
-        }
+        auto [body_forbidden, input_forbidden] = node_forbidden_flags(input, node);
+        if (body_forbidden)
+            graph->set_body_forbidden(node);
+        if (input_forbidden)
+            graph->set_input_forbidden(node);
     }
     for (const auto &[source, target] : input.alternate_edges)
         graph->add_edge(source, target);
@@ -537,6 +567,8 @@ NB_MODULE(_native, m)
         .def_rw("alternate_edges", &GraphInput::alternate_edges)
         .def_rw("weights", &GraphInput::weights)
         .def_rw("forbidden", &GraphInput::forbidden)
+        .def_rw("body_forbidden", &GraphInput::body_forbidden)
+        .def_rw("input_forbidden", &GraphInput::input_forbidden)
         .def_rw("frequency", &GraphInput::frequency)
         .def_rw("forbid_sources_and_sinks", &GraphInput::forbid_sources_and_sinks);
 
