@@ -90,21 +90,30 @@ class _IndexedZeroOutputGrowthSpace:
         self.forbidden_mask = forbidden_mask
 
         self.singleton_closure = [0] * num_nodes
-        self.singleton_neighborhood = [0] * num_nodes
+        self.singleton_augmented = [0] * num_nodes
+        self.singleton_body_neighbors = [0] * num_nodes
+        self.singleton_input_neighbors = [0] * num_nodes
         self.singleton_valid = [False] * num_nodes
         for node in range(num_nodes):
             closed = self.zero_output_closure(1 << node)
             self.singleton_closure[node] = closed
             augmented = self.augmented_nodes(closed)
-            neighborhood = augmented
-            current = augmented
+            self.singleton_augmented[node] = augmented
+            inputs = augmented & ~closed
+            current = closed
             while current:
                 lsb = current & -current
                 index = lsb.bit_length() - 1
-                neighborhood |= self.pred_main[index]
-                neighborhood |= self.succ_main[index]
+                self.singleton_body_neighbors[node] |= self.pred_main[index]
+                self.singleton_body_neighbors[node] |= self.succ_main[index]
                 current ^= lsb
-            self.singleton_neighborhood[node] = neighborhood
+            current = inputs
+            while current:
+                lsb = current & -current
+                index = lsb.bit_length() - 1
+                self.singleton_input_neighbors[node] |= self.pred_main[index]
+                self.singleton_input_neighbors[node] |= self.succ_main[index]
+                current ^= lsb
             self.singleton_valid[node] = (closed & self.forbidden_mask) == 0
 
     def _transitive_closure(
@@ -215,7 +224,8 @@ class _IndexedZeroOutputGrowthSpace:
         return outputs
 
     def is_connected_with_inputs(self, nodes: int) -> bool:
-        augmented = nodes | self.input_mask(nodes)
+        inputs = self.input_mask(nodes)
+        augmented = nodes | inputs
         if augmented == 0:
             return True
         start_bit = augmented & -augmented
@@ -228,10 +238,20 @@ class _IndexedZeroOutputGrowthSpace:
             while neighbors:
                 lsb = neighbors & -neighbors
                 neighbor = lsb.bit_length() - 1
+                if (inputs & (1 << node)) and (inputs & (1 << neighbor)):
+                    neighbors ^= lsb
+                    continue
                 seen |= lsb
                 stack.append(neighbor)
                 neighbors ^= lsb
         return seen == augmented
+
+    def can_connect(self, singleton_node: int, current_nodes: int, current_augmented: int) -> bool:
+        return (
+            (self.singleton_augmented[singleton_node] & current_augmented) != 0
+            or (self.singleton_body_neighbors[singleton_node] & current_augmented) != 0
+            or (self.singleton_input_neighbors[singleton_node] & current_nodes) != 0
+        )
 
     def is_valid_state(self, nodes: int, *, max_num_inputs: int, max_subgraph_size: int | None) -> bool:
         if nodes & self.forbidden_mask:
@@ -265,7 +285,7 @@ class _IndexedZeroOutputGrowthSpace:
                 continue
             if self.singleton_closure[node] & ~nodes == 0:
                 continue
-            if self.singleton_neighborhood[node] & current_augmented == 0:
+            if not self.can_connect(node, nodes, current_augmented):
                 continue
 
             next_state = self.zero_output_closure(nodes | (1 << node))

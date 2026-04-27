@@ -665,6 +665,45 @@ class TestMVS(unittest.TestCase):
         self.assertSetEqual({frozenset({"a", "b"})}, unconstrained)
         self.assertSetEqual({frozenset({"a", "b"})}, connected)
 
+    def test_connected_only_zero_output_does_not_use_input_input_edges(
+        self,
+    ) -> None:
+        graph = nx.DiGraph()
+        graph.add_node("a", forbidden=True)
+        graph.add_node("d", forbidden=True)
+        graph.add_edges_from(
+            [
+                ("a", "b"),
+                ("d", "c"),
+                ("a", "d"),
+            ]
+        )
+
+        unconstrained = {
+            frozenset(nodes)
+            for nodes in enumerate_convex_subgraphs(
+                graph,
+                2,
+                1,
+                forbid_sources_and_sinks=False,
+                allow_zero_outputs=True,
+            )
+        }
+        connected = {
+            frozenset(nodes)
+            for nodes in enumerate_convex_subgraphs(
+                graph,
+                2,
+                1,
+                forbid_sources_and_sinks=False,
+                allow_zero_outputs=True,
+                connected_only=True,
+            )
+        }
+
+        self.assertIn(frozenset({"b", "c"}), unconstrained)
+        self.assertNotIn(frozenset({"b", "c"}), connected)
+
     def test_alternate_graph_filters_zero_output_results(self) -> None:
         graph = nx.DiGraph()
         graph.add_node("p", forbidden=True)

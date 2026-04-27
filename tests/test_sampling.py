@@ -187,7 +187,8 @@ def _build_validator(
         return inputs & ~mask
 
     def connected_with_inputs(mask: int) -> bool:
-        augmented = mask | input_mask(mask)
+        inputs = input_mask(mask)
+        augmented = mask | inputs
         if augmented == 0:
             return True
         start = (augmented & -augmented).bit_length() - 1
@@ -199,6 +200,9 @@ def _build_validator(
             while neighbors:
                 lsb = neighbors & -neighbors
                 v = lsb.bit_length() - 1
+                if (inputs & (1 << u)) and (inputs & (1 << v)):
+                    neighbors ^= lsb
+                    continue
                 seen |= 1 << v
                 stack.append(v)
                 neighbors ^= lsb
@@ -275,15 +279,42 @@ class TestSampling(unittest.TestCase):
         self.assertEqual(2, _launch_distance(graph, target=target, samples=thin))
         self.assertEqual(0, _launch_distance(graph, target=target, samples=thick))
 
+    def test_sampling_connected_zero_output_does_not_use_input_input_edges(
+        self,
+    ) -> None:
+        graph = nx.DiGraph()
+        graph.add_node("a", forbidden=True)
+        graph.add_node("d", forbidden=True)
+        graph.add_edges_from(
+            [
+                ("a", "b"),
+                ("d", "c"),
+                ("a", "d"),
+            ]
+        )
+
+        samples = _sample_sets(
+            graph,
+            max_num_inputs=2,
+            max_states_expanded=32,
+            max_samples=32,
+            max_children_per_state=4,
+            size_bin_width=1,
+            thicken_radius=1,
+        )
+
+        self.assertNotIn(frozenset({"b", "c"}), samples)
+
     def test_extended_diversity_buckets_keep_distinct_families(self) -> None:
         graph = nx.DiGraph()
         graph.add_node("p", forbidden=True)
-        graph.add_node("q", forbidden=True)
         graph.add_edges_from(
             [
-                ("p", "a"),
-                ("p", "b"),
-                ("b", "c"),
+                ("p", "d"),
+                ("p", "e"),
+                ("b", "e"),
+                ("c", "d"),
+                ("c", "e"),
             ]
         )
 
@@ -297,8 +328,8 @@ class TestSampling(unittest.TestCase):
                 connected_only=True,
             )
         }
-        self.assertIn(frozenset({"a", "c"}), exact)
-        self.assertIn(frozenset({"c"}), exact)
+        self.assertIn(frozenset({"d"}), exact)
+        self.assertIn(frozenset({"b", "d", "e"}), exact)
 
         size_only = _sample_sets(
             graph,
@@ -323,10 +354,10 @@ class TestSampling(unittest.TestCase):
             minimal_node_bin_width=1,
         )
 
-        self.assertIn(frozenset({"a", "c"}), extended)
-        self.assertIn(frozenset({"c"}), extended)
-        self.assertNotIn(frozenset({"a", "c"}), size_only)
-        self.assertNotIn(frozenset({"c"}), size_only)
+        self.assertIn(frozenset({"d"}), extended)
+        self.assertIn(frozenset({"b", "d", "e"}), extended)
+        self.assertNotIn(frozenset({"d"}), size_only)
+        self.assertNotIn(frozenset({"b", "d", "e"}), size_only)
 
     def test_multi_pass_sampling_improves_order_sensitive_coverage(self) -> None:
         graph = nx.DiGraph()
@@ -410,10 +441,10 @@ class TestSampling(unittest.TestCase):
         self.assertEqual(1, _launch_distance(graph, target=target, samples=with_kernels))
 
     def test_real_graph_samples_are_unique_and_valid(self) -> None:
-        if not (REPO_ROOT / "data/graph.dot").exists() or not (REPO_ROOT / "graph-alt.dot").exists():
+        if not (REPO_ROOT / "data/graph.dot").exists() or not (REPO_ROOT / "data/graph-alt.dot").exists():
             self.skipTest("repo-level graph DOT test inputs are not present")
         graph = _read_dot_graph(REPO_ROOT / "data/graph.dot")
-        alternate_graph = _read_dot_graph(REPO_ROOT / "graph-alt.dot")
+        alternate_graph = _read_dot_graph(REPO_ROOT / "data/graph-alt.dot")
         validate = _build_validator(graph, alternate_graph)
 
         samples = list(
