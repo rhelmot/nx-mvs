@@ -229,6 +229,26 @@ class TestMVS(unittest.TestCase):
         }
         self.assertIn(frozenset({"a"}), result)
 
+    def test_exhaustive_enumeration_excludes_zero_output_results_by_default(self) -> None:
+        graph = nx.DiGraph()
+        graph.add_edges_from(
+            [
+                ("a", "b"),
+            ]
+        )
+
+        result = {
+            frozenset(nodes)
+            for nodes in enumerate_convex_subgraphs(
+                graph,
+                1,
+                1,
+                forbid_sources_and_sinks=False,
+            )
+        }
+
+        self.assertSetEqual({frozenset({"a"})}, result)
+
     def test_exhaustive_enumeration_can_include_zero_outputs_when_enabled(self) -> None:
         graph = nx.DiGraph()
         graph.add_node("src", forbidden=True)

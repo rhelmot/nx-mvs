@@ -44,6 +44,17 @@ def _subgraph_weight(
     return sum(float(graph.nodes[node].get(weight_attr, 1.0)) for node in subgraph)
 
 
+def _num_outputs(
+    graph: nx.DiGraph[NodeT],
+    subgraph: set[NodeT],
+) -> int:
+    return sum(
+        1
+        for node in subgraph
+        if any(successor not in subgraph for successor in graph.successors(node))
+    )
+
+
 def graph_to_input(
     graph: nx.DiGraph[NodeT],
     *,
@@ -660,6 +671,7 @@ def _iter_convex_subgraphs(
     max_queue_size: int,
 ) -> Iterator[set[NodeT]]:
     seen: set[tuple[int, ...]] | None = set() if allow_zero_outputs else None
+    require_positive_outputs = not allow_zero_outputs and max_num_outputs > 0
 
     for subgraph in iter_all_graph_input(
         payload,
@@ -669,10 +681,13 @@ def _iter_convex_subgraphs(
         max_queue_size=max_queue_size,
         connected_only=connected_only,
     ):
+        subgraph_nodes = {node_order[index] for index in subgraph}
+        if require_positive_outputs and _num_outputs(graph, subgraph_nodes) == 0:
+            continue
         if seen is not None:
             key = tuple(subgraph)
             seen.add(key)
-        yield {node_order[index] for index in subgraph}
+        yield subgraph_nodes
 
     if allow_zero_outputs:
         for subgraph in iter_all_graph_input(
