@@ -23,6 +23,8 @@ mkShell {
             xdot
             pygraphviz
             matplotlib
+            ipython
+            ipdb
         ]))
     ];
     nativeBuildInputs = [
