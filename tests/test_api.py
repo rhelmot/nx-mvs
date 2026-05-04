@@ -165,7 +165,7 @@ class TestMVS(unittest.TestCase):
 
     def test_body_forbidden_nodes_may_still_appear_as_inputs(self) -> None:
         graph = nx.DiGraph()
-        graph.add_node("i", body_forbidden=True)
+        graph.add_node("i", body_forbidden=True, allow_zero_outputs=True)
         graph.add_edges_from(
             [
                 ("i", "a"),
