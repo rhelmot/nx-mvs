@@ -4,7 +4,7 @@ import unittest
 
 import networkx as nx
 
-from findability import measure_findability
+from .findability import measure_findability
 
 
 class TestFindability(unittest.TestCase):
