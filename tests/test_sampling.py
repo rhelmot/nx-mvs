@@ -9,7 +9,9 @@ import networkx as nx
 
 from mvs import (
     enumerate_convex_subgraphs,
+    grow_nonzero_output_convex_subgraphs,
     grow_zero_output_convex_subgraphs,
+    sample_nonzero_output_convex_subgraphs,
     sample_zero_output_convex_subgraphs,
 )
 
@@ -559,3 +561,212 @@ class TestSampling(unittest.TestCase):
         self.assertEqual(len(samples), len({frozenset(sample) for sample in samples}))
         for sample in samples:
             validate(sample)
+
+    def test_sampling_connected_nonzero_output_returns_valid_subset(self) -> None:
+        graph = nx.DiGraph()
+        graph.add_node("p", forbidden=True)
+        graph.add_node("x", forbidden=True)
+        graph.add_edges_from(
+            [
+                ("p", "a"),
+                ("a", "b"),
+                ("b", "x"),
+            ]
+        )
+
+        exact = {
+            frozenset(nodes)
+            for nodes in enumerate_convex_subgraphs(
+                graph,
+                1,
+                1,
+                forbid_sources_and_sinks=False,
+                connected_only=True,
+                forbidden_attr=None,
+                body_forbidden_attr="forbidden",
+            )
+        }
+        samples = {
+            frozenset(nodes)
+            for nodes in sample_nonzero_output_convex_subgraphs(
+                graph,
+                1,
+                1,
+                forbid_sources_and_sinks=False,
+                max_states_expanded=16,
+                max_samples=8,
+                max_children_per_state=2,
+                size_bin_width=1,
+                forbidden_attr=None,
+                body_forbidden_attr="forbidden",
+            )
+        }
+
+        self.assertSetEqual(
+            {frozenset({"a"}), frozenset({"b"}), frozenset({"a", "b"})},
+            samples,
+        )
+        self.assertTrue(samples <= exact)
+
+    def test_grow_connected_nonzero_output_enumerates_valid_supersets(self) -> None:
+        graph = nx.DiGraph()
+        graph.add_node("p", forbidden=True)
+        graph.add_node("x", forbidden=True)
+        graph.add_edges_from(
+            [
+                ("p", "a"),
+                ("a", "b"),
+                ("b", "c"),
+                ("c", "x"),
+            ]
+        )
+
+        result = {
+            frozenset(nodes)
+            for nodes in grow_nonzero_output_convex_subgraphs(
+                graph,
+                {"a"},
+                max_num_inputs=1,
+                max_num_outputs=1,
+                forbid_sources_and_sinks=False,
+                forbidden_attr=None,
+                body_forbidden_attr="forbidden",
+            )
+        }
+
+        self.assertSetEqual(
+            {
+                frozenset({"a"}),
+                frozenset({"a", "b"}),
+                frozenset({"a", "b", "c"}),
+            },
+            result,
+        )
+
+    def test_grow_connected_nonzero_output_oracle_prunes_growth(self) -> None:
+        graph = nx.DiGraph()
+        graph.add_node("p", forbidden=True)
+        graph.add_node("x", forbidden=True)
+        graph.add_edges_from(
+            [
+                ("p", "a"),
+                ("a", "b"),
+                ("b", "c"),
+                ("c", "x"),
+            ]
+        )
+
+        result = {
+            frozenset(nodes)
+            for nodes in grow_nonzero_output_convex_subgraphs(
+                graph,
+                {"a"},
+                max_num_inputs=1,
+                max_num_outputs=1,
+                forbid_sources_and_sinks=False,
+                oracle=lambda _state, nodes: True if len(nodes) < 2 else None,
+                initial_oracle_state=True,
+                forbidden_attr=None,
+                body_forbidden_attr="forbidden",
+            )
+        }
+
+        self.assertSetEqual(
+            {
+                frozenset({"a"}),
+                frozenset({"a", "b"}),
+            },
+            result,
+        )
+
+    def test_nonzero_output_sampling_and_growth_respect_alternate_graph(self) -> None:
+        graph = nx.DiGraph()
+        graph.add_node("p", forbidden=True)
+        graph.add_node("x", forbidden=True)
+        graph.add_edges_from(
+            [
+                ("p", "a"),
+                ("p", "b"),
+                ("a", "c"),
+                ("b", "c"),
+                ("c", "x"),
+            ]
+        )
+        alternate_graph = nx.DiGraph()
+        alternate_graph.add_nodes_from(graph.nodes(data=True))
+        alternate_graph.add_edges_from(
+            [
+                ("a", "b"),
+                ("b", "c"),
+                ("c", "x"),
+            ]
+        )
+
+        samples = {
+            frozenset(nodes)
+            for nodes in sample_nonzero_output_convex_subgraphs(
+                graph,
+                2,
+                1,
+                alternate_graph=alternate_graph,
+                forbid_sources_and_sinks=False,
+                max_states_expanded=32,
+                max_samples=16,
+                max_children_per_state=3,
+                size_bin_width=1,
+                forbidden_attr=None,
+                body_forbidden_attr="forbidden",
+            )
+        }
+        grown = {
+            frozenset(nodes)
+            for nodes in grow_nonzero_output_convex_subgraphs(
+                graph,
+                {"a"},
+                alternate_graph=alternate_graph,
+                max_num_inputs=2,
+                max_num_outputs=1,
+                forbid_sources_and_sinks=False,
+                forbidden_attr=None,
+                body_forbidden_attr="forbidden",
+            )
+        }
+
+        self.assertIn(frozenset({"a", "b", "c"}), samples)
+        self.assertNotIn(frozenset({"a", "c"}), samples)
+        self.assertSetEqual(
+            {frozenset({"a"}), frozenset({"a", "b", "c"})},
+            grown,
+        )
+
+    def test_nonzero_output_boundary_pair_sampling_jumps_to_deep_region(self) -> None:
+        graph = nx.DiGraph()
+        graph.add_node("i", forbidden=True)
+        graph.add_node("sink", forbidden=True)
+        graph.add_edges_from(
+            [
+                ("i", "a"),
+                ("a", "b"),
+                ("a", "side"),
+                ("b", "out"),
+                ("side", "out"),
+                ("out", "sink"),
+            ]
+        )
+
+        samples = {
+            frozenset(nodes)
+            for nodes in sample_nonzero_output_convex_subgraphs(
+                graph,
+                1,
+                1,
+                forbid_sources_and_sinks=False,
+                max_states_expanded=0,
+                max_samples=8,
+                boundary_pair_samples=8,
+                forbidden_attr=None,
+                body_forbidden_attr="forbidden",
+            )
+        }
+
+        self.assertIn(frozenset({"a", "b", "side", "out"}), samples)

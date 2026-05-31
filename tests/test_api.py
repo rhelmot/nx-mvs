@@ -1,22 +1,61 @@
 from __future__ import annotations
 
+from collections.abc import Callable, Hashable, Iterable, Iterator
+from os import PathLike
 from pathlib import Path
-from typing import Hashable
 import unittest
 
 import networkx as nx
 
-from growth import grow_zero_output_convex_subgraphs
 from mvs import (
     enumerate_convex_subgraphs,
     enumerate_maximum_convex_subgraphs,
     graph_to_input,
+    grow_zero_output_convex_subgraphs as _grow_zero_output_convex_subgraphs,
     sample_zero_output_convex_subgraphs,
 )
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 BODY_ONLY_FORBIDDEN = {"forbidden_attr": None, "body_forbidden_attr": "forbidden"}
+GraphSource = nx.DiGraph | str | PathLike[str]
+
+
+def _load_graph(source: GraphSource | None) -> nx.DiGraph | None:
+    if source is None:
+        return None
+    if isinstance(source, nx.DiGraph):
+        return source
+    return nx.DiGraph(nx.nx_pydot.read_dot(Path(source)))
+
+
+def grow_zero_output_convex_subgraphs(
+    graph: GraphSource = "graph.dot",
+    alternate_graph: GraphSource | None = "graph-alt.dot",
+    *,
+    seed_nodes: Iterable[Hashable],
+    oracle: Callable[..., object | None] | None = None,
+    initial_oracle_state: object | None = None,
+    max_num_inputs: int = 4,
+    max_subgraph_size: int = 50,
+    forbid_sources_and_sinks: bool = False,
+    forbidden_attr: str | None = "forbidden",
+    body_forbidden_attr: str | None = None,
+    input_forbidden_attr: str | None = None,
+) -> Iterator[set[Hashable]]:
+    yield from _grow_zero_output_convex_subgraphs(
+        _load_graph(graph),
+        set(seed_nodes),
+        alternate_graph=_load_graph(alternate_graph),
+        max_num_inputs=max_num_inputs,
+        max_subgraph_size=max_subgraph_size,
+        forbidden_attr=forbidden_attr,
+        body_forbidden_attr=body_forbidden_attr,
+        input_forbidden_attr=input_forbidden_attr,
+        forbid_sources_and_sinks=forbid_sources_and_sinks,
+        oracle=oracle,
+        initial_oracle_state=initial_oracle_state,
+    )
 
 
 def read_dimacs_graph(path: Path, *, weighted: bool) -> nx.DiGraph[int]:

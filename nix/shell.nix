@@ -25,6 +25,7 @@ mkShell {
             matplotlib
             ipython
             ipdb
+            pip
         ]))
     ];
     nativeBuildInputs = [

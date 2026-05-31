@@ -536,6 +536,130 @@ SolveResult grow_zero_output_graph_input(const GraphInput &input,
     return result;
 }
 
+SolveResult sample_nonzero_output_graph_input(const GraphInput &input,
+                                              int max_num_inputs,
+                                              int max_num_outputs,
+                                              int max_subgraph_size,
+                                              int max_states_expanded,
+                                              int max_samples,
+                                              int max_children_per_state,
+                                              int size_bin_width,
+                                              int thicken_radius,
+                                              bool bucket_by_num_inputs,
+                                              bool bucket_by_num_outputs,
+                                              int minimal_node_bin_width,
+                                              int boundary_pair_samples)
+{
+    if (max_num_inputs < 0 || max_num_outputs <= 0)
+        throw nb::value_error(
+            "I/O limits must be non-negative and max_num_outputs must be positive");
+    if (max_subgraph_size < -1)
+        throw nb::value_error("max_subgraph_size must be -1 or non-negative");
+    if (max_states_expanded < 0 || max_samples < 0)
+        throw nb::value_error("sampling budgets must be non-negative");
+    if (max_children_per_state <= 0)
+        throw nb::value_error("max_children_per_state must be positive");
+    if (size_bin_width <= 0)
+        throw nb::value_error("size_bin_width must be positive");
+    if (thicken_radius < 0)
+        throw nb::value_error("thicken_radius must be non-negative");
+    if (minimal_node_bin_width < 0)
+        throw nb::value_error("minimal_node_bin_width must be non-negative");
+    if (boundary_pair_samples < 0)
+        throw nb::value_error("boundary_pair_samples must be non-negative");
+
+    auto graph = make_graph(input);
+    auto alternate_graph = make_alternate_graph(input);
+    if (graph->forbidden().size() == graph->num_nodes())
+        return {};
+
+    SolveResult result;
+    StderrSilencer silence;
+    vs_sample_nonzero_output_connected(
+        *graph,
+        max_num_inputs,
+        max_num_outputs,
+        max_subgraph_size,
+        alternate_graph.get(),
+        [&result](const IOSubgraph &subgraph) {
+            result.max_weight = std::max(result.max_weight, subgraph.weight());
+            result.subgraphs.push_back(to_vector(subgraph.nodes()));
+        },
+        max_states_expanded,
+        max_samples,
+        max_children_per_state,
+        size_bin_width,
+        thicken_radius,
+        bucket_by_num_inputs,
+        bucket_by_num_outputs,
+        minimal_node_bin_width,
+        boundary_pair_samples);
+    return result;
+}
+
+SolveResult grow_nonzero_output_graph_input(const GraphInput &input,
+                                            std::vector<int> seed_nodes,
+                                            int max_num_inputs,
+                                            int max_num_outputs,
+                                            int max_subgraph_size,
+                                            nb::object oracle,
+                                            nb::object initial_oracle_state)
+{
+    if (max_num_inputs < 0 || max_num_outputs <= 0)
+        throw nb::value_error(
+            "I/O limits must be non-negative and max_num_outputs must be positive");
+    if (max_subgraph_size < -1)
+        throw nb::value_error("max_subgraph_size must be -1 or non-negative");
+
+    auto graph = make_graph(input);
+    auto alternate_graph = make_alternate_graph(input);
+    if (graph->forbidden().size() == graph->num_nodes())
+        return {};
+
+    intset seed(static_cast<unsigned>(graph->num_nodes()));
+    for (const auto &node : seed_nodes) {
+        if (node < 0 || node >= graph->num_nodes())
+            throw nb::value_error("seed node index out of range");
+        seed.add(static_cast<unsigned>(node));
+    }
+
+    SolveResult result;
+    std::vector<nb::object> oracle_states;
+    oracle_states.push_back(initial_oracle_state.is_valid() ? initial_oracle_state
+                                                            : nb::none());
+    StderrSilencer silence;
+    nb::gil_scoped_release release;
+    vs_grow_nonzero_output_connected(
+        *graph,
+        seed,
+        max_num_inputs,
+        max_num_outputs,
+        max_subgraph_size,
+        alternate_graph.get(),
+        0,
+        [&result, &oracle, &oracle_states](const IOSubgraph &subgraph,
+                                           std::size_t state_token)
+            -> std::optional<std::size_t> {
+            auto nodes = to_vector(subgraph.nodes());
+            result.max_weight = std::max(result.max_weight, subgraph.weight());
+            result.subgraphs.push_back(nodes);
+            if (oracle.is_none())
+                return state_token;
+
+            nb::gil_scoped_acquire acquire;
+            nb::object outcome = oracle(oracle_states.at(state_token), nodes);
+            if (outcome.is_none())
+                return std::nullopt;
+            if (nb::isinstance<nb::bool_>(outcome)) {
+                return nb::cast<bool>(outcome) ? std::optional<std::size_t>(state_token)
+                                               : std::nullopt;
+            }
+            oracle_states.push_back(std::move(outcome));
+            return oracle_states.size() - 1;
+        });
+    return result;
+}
+
 std::shared_ptr<ExhaustiveSubgraphIterator> iter_all_graph_input(
     const GraphInput &input,
     int max_num_inputs,
@@ -627,6 +751,32 @@ NB_MODULE(_native, m)
         nb::arg("graph_input"),
         nb::arg("seed_nodes"),
         nb::arg("max_num_inputs"),
+        nb::arg("max_subgraph_size") = -1,
+        nb::arg("oracle") = nb::none(),
+        nb::arg("initial_oracle_state") = nb::none());
+    m.def(
+        "sample_nonzero_output_graph_input",
+        &sample_nonzero_output_graph_input,
+        nb::arg("graph_input"),
+        nb::arg("max_num_inputs"),
+        nb::arg("max_num_outputs"),
+        nb::arg("max_subgraph_size") = -1,
+        nb::arg("max_states_expanded") = 10000,
+        nb::arg("max_samples") = 1000,
+        nb::arg("max_children_per_state") = 2,
+        nb::arg("size_bin_width") = 4,
+        nb::arg("thicken_radius") = 1,
+        nb::arg("bucket_by_num_inputs") = true,
+        nb::arg("bucket_by_num_outputs") = true,
+        nb::arg("minimal_node_bin_width") = 1,
+        nb::arg("boundary_pair_samples") = 512);
+    m.def(
+        "grow_nonzero_output_graph_input",
+        &grow_nonzero_output_graph_input,
+        nb::arg("graph_input"),
+        nb::arg("seed_nodes"),
+        nb::arg("max_num_inputs"),
+        nb::arg("max_num_outputs"),
         nb::arg("max_subgraph_size") = -1,
         nb::arg("oracle") = nb::none(),
         nb::arg("initial_oracle_state") = nb::none());

@@ -8,8 +8,10 @@ import networkx as nx
 
 from ._native import (
     GraphInput,
+    grow_nonzero_output_graph_input,
     grow_zero_output_graph_input,
     iter_all_graph_input,
+    sample_nonzero_output_graph_input,
     sample_zero_output_graph_input,
     solve_graph_input,
 )
@@ -565,6 +567,148 @@ def sample_zero_output_convex_subgraphs(
     return iter_component_samples()
 
 
+def sample_nonzero_output_convex_subgraphs(
+    graph: nx.DiGraph[NodeT],
+    max_num_inputs: int,
+    max_num_outputs: int,
+    *,
+    alternate_graph: nx.DiGraph[NodeT] | None = None,
+    max_subgraph_size: int | None = None,
+    weighted: bool = False,
+    weight_attr: str = "weight",
+    forbidden_attr: str | None = "forbidden",
+    body_forbidden_attr: str | None = None,
+    input_forbidden_attr: str | None = None,
+    forbid_sources_and_sinks: bool = True,
+    ordering: Ordering = "toposort",
+    max_states_expanded: int = 10000,
+    max_samples: int = 1000,
+    max_children_per_state: int = 2,
+    size_bin_width: int = 4,
+    thicken_radius: int = 1,
+    bucket_by_num_inputs: bool = True,
+    bucket_by_num_outputs: bool = True,
+    minimal_node_bin_width: int = 1,
+    boundary_pair_samples: int = 512,
+    sampling_passes: int = 1,
+    exact_kernel_size: int = 0,
+) -> Iterator[set[NodeT]]:
+    """
+    Heuristically sample connected convex subgraphs with at least one output.
+
+    This is a bounded sampler for the connected non-zero-output path. Returned
+    subgraphs satisfy ``1 <= num_outputs <= max_num_outputs``.
+    """
+
+    native_max_subgraph_size = -1 if max_subgraph_size is None else max_subgraph_size
+    if native_max_subgraph_size < -1:
+        raise ValueError("max_subgraph_size must be non-negative or None")
+    if max_num_outputs <= 0:
+        raise ValueError("max_num_outputs must be positive")
+    if max_states_expanded < 0 or max_samples < 0:
+        raise ValueError("sampling budgets must be non-negative")
+    if max_children_per_state <= 0:
+        raise ValueError("max_children_per_state must be positive")
+    if size_bin_width <= 0:
+        raise ValueError("size_bin_width must be positive")
+    if thicken_radius < 0:
+        raise ValueError("thicken_radius must be non-negative")
+    if minimal_node_bin_width < 0:
+        raise ValueError("minimal_node_bin_width must be non-negative")
+    if boundary_pair_samples < 0:
+        raise ValueError("boundary_pair_samples must be non-negative")
+    if sampling_passes <= 0:
+        raise ValueError("sampling_passes must be positive")
+    if exact_kernel_size < 0:
+        raise ValueError("exact_kernel_size must be non-negative")
+
+    pass_configs = _sampling_pass_configs(
+        ordering,
+        max_children_per_state=max_children_per_state,
+        size_bin_width=size_bin_width,
+        pass_count=sampling_passes,
+    )
+    per_pass_states = max(1, math.ceil(max_states_expanded / len(pass_configs)))
+    per_pass_samples = max(1, math.ceil(max_samples / len(pass_configs)))
+
+    def iter_component_samples() -> Iterator[set[NodeT]]:
+        for component_nodes in _connected_component_node_sets(graph, alternate_graph):
+            component = cast("nx.DiGraph[NodeT]", graph.subgraph(component_nodes).copy())
+            component_alternate = (
+                cast("nx.DiGraph[NodeT]", alternate_graph.subgraph(component_nodes).copy())
+                if alternate_graph is not None
+                else None
+            )
+            seen: set[frozenset[NodeT]] = set()
+
+            if exact_kernel_size > 0:
+                exact_limit = (
+                    exact_kernel_size
+                    if native_max_subgraph_size < 0
+                    else min(native_max_subgraph_size, exact_kernel_size)
+                )
+                for subgraph in enumerate_convex_subgraphs(
+                    component,
+                    max_num_inputs,
+                    max_num_outputs,
+                    alternate_graph=component_alternate,
+                    max_subgraph_size=exact_limit,
+                    weighted=weighted,
+                    weight_attr=weight_attr,
+                    forbidden_attr=forbidden_attr,
+                    body_forbidden_attr=body_forbidden_attr,
+                    input_forbidden_attr=input_forbidden_attr,
+                    forbid_sources_and_sinks=forbid_sources_and_sinks,
+                    allow_zero_outputs=False,
+                    connected_only=True,
+                    ordering=ordering,
+                ):
+                    key = frozenset(subgraph)
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    yield subgraph
+
+            for pass_ordering, pass_children, pass_size_bin_width in pass_configs:
+                payload, node_order = graph_to_input(
+                    component,
+                    alternate_graph=component_alternate,
+                    weighted=weighted,
+                    weight_attr=weight_attr,
+                    forbidden_attr=forbidden_attr,
+                    body_forbidden_attr=body_forbidden_attr,
+                    input_forbidden_attr=input_forbidden_attr,
+                    forbid_sources_and_sinks=forbid_sources_and_sinks,
+                    ordering=pass_ordering,
+                )
+                result = sample_nonzero_output_graph_input(
+                    payload,
+                    max_num_inputs,
+                    max_num_outputs,
+                    native_max_subgraph_size,
+                    max_states_expanded=per_pass_states,
+                    max_samples=per_pass_samples,
+                    max_children_per_state=pass_children,
+                    size_bin_width=pass_size_bin_width,
+                    thicken_radius=thicken_radius,
+                    bucket_by_num_inputs=bucket_by_num_inputs,
+                    bucket_by_num_outputs=bucket_by_num_outputs,
+                    minimal_node_bin_width=minimal_node_bin_width,
+                    boundary_pair_samples=boundary_pair_samples,
+                )
+                for subgraph in result.subgraphs:
+                    nodes = {node_order[index] for index in subgraph}
+                    if exact_kernel_size > 0 and len(nodes) <= exact_kernel_size:
+                        continue
+                    key = frozenset(nodes)
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    yield nodes
+
+    return iter_component_samples()
+
+
 @overload
 def grow_zero_output_convex_subgraphs(
     graph: nx.DiGraph[NodeT],
@@ -646,6 +790,100 @@ def grow_zero_output_convex_subgraphs(
         payload,
         seed_indices,
         max_num_inputs,
+        native_max_subgraph_size,
+        oracle_indices if oracle is not None else None,
+        initial_oracle_state,
+    )
+    return ({node_order[index] for index in subgraph} for subgraph in result.subgraphs)
+
+
+@overload
+def grow_nonzero_output_convex_subgraphs(
+    graph: nx.DiGraph[NodeT],
+    seed_nodes: set[NodeT],
+    *,
+    alternate_graph: nx.DiGraph[NodeT] | None = None,
+    max_num_inputs: int = 4,
+    max_num_outputs: int = 1,
+    max_subgraph_size: int | None = None,
+    forbidden_attr: str | None = "forbidden",
+    body_forbidden_attr: str | None = None,
+    input_forbidden_attr: str | None = None,
+    forbid_sources_and_sinks: bool = False,
+    ordering: Ordering = "toposort",
+    oracle: None = None,
+    initial_oracle_state: None = None,
+) -> Iterator[set[NodeT]]: ...
+
+
+@overload
+def grow_nonzero_output_convex_subgraphs(
+    graph: nx.DiGraph[NodeT],
+    seed_nodes: set[NodeT],
+    *,
+    alternate_graph: nx.DiGraph[NodeT] | None = None,
+    max_num_inputs: int = 4,
+    max_num_outputs: int = 1,
+    max_subgraph_size: int | None = None,
+    forbidden_attr: str | None = "forbidden",
+    body_forbidden_attr: str | None = None,
+    input_forbidden_attr: str | None = None,
+    forbid_sources_and_sinks: bool = False,
+    ordering: Ordering = "toposort",
+    oracle: Callable[[StateT, set[NodeT]], StateT | None],
+    initial_oracle_state: StateT,
+) -> Iterator[set[NodeT]]: ...
+
+
+def grow_nonzero_output_convex_subgraphs(
+    graph: nx.DiGraph[NodeT],
+    seed_nodes: set[NodeT],
+    *,
+    alternate_graph: nx.DiGraph[NodeT] | None = None,
+    max_num_inputs: int = 4,
+    max_num_outputs: int = 1,
+    max_subgraph_size: int | None = None,
+    forbidden_attr: str | None = "forbidden",
+    body_forbidden_attr: str | None = None,
+    input_forbidden_attr: str | None = None,
+    forbid_sources_and_sinks: bool = False,
+    ordering: Ordering = "toposort",
+    oracle: Callable[..., object | None] | None = None,
+    initial_oracle_state: object | None = None,
+) -> Iterator[set[NodeT]]:
+    native_max_subgraph_size = -1 if max_subgraph_size is None else max_subgraph_size
+    if native_max_subgraph_size < -1:
+        raise ValueError("max_subgraph_size must be non-negative or None")
+    if max_num_outputs <= 0:
+        raise ValueError("max_num_outputs must be positive")
+
+    payload, node_order = graph_to_input(
+        graph,
+        alternate_graph=alternate_graph,
+        forbidden_attr=forbidden_attr,
+        body_forbidden_attr=body_forbidden_attr,
+        input_forbidden_attr=input_forbidden_attr,
+        forbid_sources_and_sinks=forbid_sources_and_sinks,
+        ordering=ordering,
+    )
+    node_index = {node: index for index, node in enumerate(node_order)}
+    seed_indices: list[int] = []
+    for node in seed_nodes:
+        try:
+            seed_indices.append(node_index[node])
+        except KeyError as exc:
+            raise ValueError(f"seed node {node!r} is not present in the graph set") from exc
+
+    def oracle_indices(state: object | None, indices: list[int]) -> object | None:
+        nodes = {node_order[index] for index in indices}
+        assert oracle is not None
+        return oracle(state, nodes)
+
+    result = grow_nonzero_output_graph_input(
+        payload,
+        seed_indices,
+        max_num_inputs,
+        max_num_outputs,
         native_max_subgraph_size,
         oracle_indices if oracle is not None else None,
         initial_oracle_state,

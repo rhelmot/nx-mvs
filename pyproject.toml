@@ -11,6 +11,7 @@ dependencies = ["networkx>=3.5"]
 
 [tool.scikit-build]
 wheel.packages = ["src/mvs"]
+editable.mode = "inplace"
 
 [tool.pyright]
 include = ["src", "tests"]

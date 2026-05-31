@@ -72,10 +72,38 @@ def sample_zero_output_graph_input(
 ) -> SolveResult: ...
 
 
+def sample_nonzero_output_graph_input(
+    graph_input: GraphInput,
+    max_num_inputs: int,
+    max_num_outputs: int,
+    max_subgraph_size: int = -1,
+    max_states_expanded: int = 10000,
+    max_samples: int = 1000,
+    max_children_per_state: int = 2,
+    size_bin_width: int = 4,
+    thicken_radius: int = 1,
+    bucket_by_num_inputs: bool = True,
+    bucket_by_num_outputs: bool = True,
+    minimal_node_bin_width: int = 1,
+    boundary_pair_samples: int = 512,
+) -> SolveResult: ...
+
+
 def grow_zero_output_graph_input(
     graph_input: GraphInput,
     seed_nodes: list[int],
     max_num_inputs: int,
+    max_subgraph_size: int = -1,
+    oracle: Callable[[StateT, list[int]], StateT | None] | None = None,
+    initial_oracle_state: StateT | None = None,
+) -> SolveResult: ...
+
+
+def grow_nonzero_output_graph_input(
+    graph_input: GraphInput,
+    seed_nodes: list[int],
+    max_num_inputs: int,
+    max_num_outputs: int,
     max_subgraph_size: int = -1,
     oracle: Callable[[StateT, list[int]], StateT | None] | None = None,
     initial_oracle_state: StateT | None = None,
