@@ -932,6 +932,36 @@ class TestMVS(unittest.TestCase):
             with_alternate,
         )
 
+    def test_sampled_single_output_maximum_can_include_zero_outputs(self) -> None:
+        graph = nx.DiGraph()
+        graph.add_node("p", forbidden=True)
+        graph.add_nodes_from(["a", "b"])
+        graph.add_edges_from(
+            [
+                ("p", "a"),
+                ("p", "b"),
+            ]
+        )
+
+        alternate_graph = nx.DiGraph()
+        alternate_graph.add_nodes_from(graph.nodes(data=True))
+
+        result = {
+            frozenset(nodes)
+            for nodes in enumerate_maximum_convex_subgraphs(
+                graph,
+                1,
+                1,
+                alternate_graph=alternate_graph,
+                forbid_sources_and_sinks=False,
+                allow_zero_outputs=True,
+                single_output_mode="sample",
+                **BODY_ONLY_FORBIDDEN,
+            )
+        }
+
+        self.assertSetEqual({frozenset({"a", "b"})}, result)
+
     def test_alternate_graph_closure_rejects_body_forbidden_nodes(self) -> None:
         graph = nx.DiGraph()
         graph.add_node("p", forbidden=True, weight=0.0)
