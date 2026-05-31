@@ -165,10 +165,12 @@ class TestMVS(unittest.TestCase):
 
     def test_body_forbidden_nodes_may_still_appear_as_inputs(self) -> None:
         graph = nx.DiGraph()
-        graph.add_node("i", body_forbidden=True, allow_zero_outputs=True)
+        graph.add_node("i", body_forbidden=True)
+        graph.add_node("o", body_forbidden=True)
         graph.add_edges_from(
             [
                 ("i", "a"),
+                ("a", "o"),
             ]
         )
 
@@ -840,6 +842,94 @@ class TestMVS(unittest.TestCase):
         self.assertIn(frozenset({"a", "c"}), without_alternate)
         self.assertNotIn(frozenset({"a", "c"}), with_alternate)
         self.assertIn(frozenset({"a", "b", "c"}), with_alternate)
+
+    def test_maximum_enumeration_respects_alternate_graph(self) -> None:
+        graph = nx.DiGraph()
+        graph.add_node("p", forbidden=True, weight=0.0)
+        graph.add_node("a", weight=10.0)
+        graph.add_node("b", weight=1.0)
+        graph.add_node("c", weight=10.0)
+        graph.add_edges_from(
+            [
+                ("p", "a"),
+                ("p", "c"),
+            ]
+        )
+
+        alternate_graph = nx.DiGraph()
+        alternate_graph.add_nodes_from(graph.nodes(data=True))
+        alternate_graph.add_edges_from(
+            [
+                ("a", "b"),
+                ("b", "c"),
+            ]
+        )
+
+        kwargs = {
+            "max_num_inputs": 1,
+            "max_num_outputs": 1,
+            "max_subgraph_size": 2,
+            "weighted": True,
+            "forbid_sources_and_sinks": False,
+            "allow_zero_outputs": True,
+            **BODY_ONLY_FORBIDDEN,
+        }
+        without_alternate = {
+            frozenset(nodes)
+            for nodes in enumerate_maximum_convex_subgraphs(graph, **kwargs)
+        }
+        with_alternate = {
+            frozenset(nodes)
+            for nodes in enumerate_maximum_convex_subgraphs(
+                graph,
+                alternate_graph=alternate_graph,
+                **kwargs,
+            )
+        }
+
+        self.assertSetEqual({frozenset({"a", "c"})}, without_alternate)
+        self.assertSetEqual(
+            {frozenset({"a", "b"}), frozenset({"b", "c"})},
+            with_alternate,
+        )
+
+    def test_alternate_graph_closure_rejects_body_forbidden_nodes(self) -> None:
+        graph = nx.DiGraph()
+        graph.add_node("p", forbidden=True, weight=0.0)
+        graph.add_node("a", weight=10.0)
+        graph.add_node("b", forbidden=True, weight=1.0)
+        graph.add_node("c", weight=10.0)
+        graph.add_edges_from(
+            [
+                ("p", "a"),
+                ("p", "c"),
+            ]
+        )
+
+        alternate_graph = nx.DiGraph()
+        alternate_graph.add_nodes_from(graph.nodes(data=True))
+        alternate_graph.add_edges_from(
+            [
+                ("a", "b"),
+                ("b", "c"),
+            ]
+        )
+
+        result = {
+            frozenset(nodes)
+            for nodes in enumerate_maximum_convex_subgraphs(
+                graph,
+                1,
+                1,
+                alternate_graph=alternate_graph,
+                weighted=True,
+                forbid_sources_and_sinks=False,
+                allow_zero_outputs=True,
+                **BODY_ONLY_FORBIDDEN,
+            )
+        }
+
+        self.assertSetEqual({frozenset({"a"}), frozenset({"c"})}, result)
 
     def test_alternate_graph_filters_connected_zero_output_results(self) -> None:
         graph = nx.DiGraph()
