@@ -223,17 +223,85 @@ def enumerate_maximum_convex_subgraphs(
     iteration_type: str = "linear-rev",
     ordering: Ordering = "toposort",
     flags: int = 0xFF,
+    single_output_mode: Literal["auto", "exhaustive", "sample"] = "auto",
 ) -> Iterator[set[NodeT]]:
     """
     Enumerate the maximum directed convex subgraphs of a DAG under I/O constraints.
 
     This algorithm is the implementation for Giaquinta et. al. "Maximum Convex Subgraphs Under I/O Constraint for
     Automatic Identification of Custom Instructions"
+
+    For large unweighted single-output queries with an alternate graph,
+    ``single_output_mode="auto"`` uses the bounded connected non-zero-output
+    sampler to avoid the pathological exhaustive path. Use
+    ``single_output_mode="exhaustive"`` to force exact exhaustive enumeration.
     """
 
     native_max_subgraph_size = -1 if max_subgraph_size is None else max_subgraph_size
     if native_max_subgraph_size < -1:
         raise ValueError("max_subgraph_size must be non-negative or None")
+    if single_output_mode not in {"auto", "exhaustive", "sample"}:
+        raise ValueError("single_output_mode must be 'auto', 'exhaustive', or 'sample'")
+
+    if (
+        max_num_outputs == 1
+        and alternate_graph is not None
+        and not weighted
+        and not allow_zero_outputs
+        and (
+            single_output_mode == "sample"
+            or (
+                single_output_mode == "auto"
+                and graph.number_of_nodes() >= 512
+            )
+        )
+    ):
+        def iter_sampled_single_output_maximum() -> Iterator[set[NodeT]]:
+            best_size = -1
+            best_subgraphs: list[set[NodeT]] = []
+            seen: set[frozenset[NodeT]] = set()
+            for subgraph in sample_nonzero_output_convex_subgraphs(
+                graph,
+                max_num_inputs,
+                max_num_outputs,
+                alternate_graph=alternate_graph,
+                max_subgraph_size=max_subgraph_size,
+                weighted=weighted,
+                weight_attr=weight_attr,
+                forbidden_attr=forbidden_attr,
+                body_forbidden_attr=body_forbidden_attr,
+                input_forbidden_attr=input_forbidden_attr,
+                forbid_sources_and_sinks=forbid_sources_and_sinks,
+                ordering=ordering,
+                max_states_expanded=0,
+                max_samples=512,
+                max_children_per_state=2,
+                size_bin_width=1,
+                thicken_radius=0,
+                bucket_by_num_inputs=True,
+                bucket_by_num_outputs=True,
+                minimal_node_bin_width=1,
+                boundary_pair_samples=512,
+            ):
+                key = frozenset(subgraph)
+                if key in seen:
+                    continue
+                seen.add(key)
+                size = len(subgraph)
+                if size > best_size:
+                    best_size = size
+                    best_subgraphs = [subgraph]
+                elif size == best_size:
+                    best_subgraphs.append(subgraph)
+            yield from best_subgraphs
+
+        return iter_sampled_single_output_maximum()
+
+    if single_output_mode == "sample" and max_num_outputs == 1:
+        raise NotImplementedError(
+            "sampled single-output maximum mode currently supports only "
+            "unweighted non-zero-output enumeration with an alternate graph"
+        )
 
     if max_num_outputs <= 1:
         best_weight = float("-inf")
