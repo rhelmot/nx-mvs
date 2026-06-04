@@ -578,7 +578,7 @@ class TestMVS(unittest.TestCase):
             seen_states[frozenset({"a", "c"})],
         )
 
-    def test_grow_zero_output_convex_subgraphs_merged_path_uses_some_parent_state(
+    def test_grow_zero_output_convex_subgraphs_merged_path_uses_deterministic_parent_state(
         self,
     ) -> None:
         graph = nx.DiGraph()
@@ -610,9 +610,9 @@ class TestMVS(unittest.TestCase):
             )
         )
 
-        self.assertIn(
+        self.assertEqual(
+            frozenset({"a", "c"}),
             seen_states[frozenset({"a", "b", "c"})],
-            {frozenset({"a", "b"}), frozenset({"a", "c"})},
         )
 
     def test_zero_output_role_reversal_respects_original_input_bound(self) -> None:
