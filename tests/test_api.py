@@ -1512,6 +1512,7 @@ class TestMVS(unittest.TestCase):
                         graph,
                         max_inputs,
                         max_outputs,
+                        **BODY_ONLY_FORBIDDEN,
                     )
                 )
                 self.assertEqual(expected_count, len(result))
