@@ -4,9 +4,11 @@ from collections.abc import Callable, Hashable, Iterable, Iterator
 from os import PathLike
 from pathlib import Path
 import unittest
+from unittest.mock import patch
 
 import networkx as nx
 
+import mvs._api as mvs_api
 from mvs import (
     enumerate_convex_subgraphs,
     enumerate_maximum_convex_subgraphs,
@@ -955,12 +957,147 @@ class TestMVS(unittest.TestCase):
                 alternate_graph=alternate_graph,
                 forbid_sources_and_sinks=False,
                 allow_zero_outputs=True,
-                single_output_mode="sample",
+                sampling=True,
                 **BODY_ONLY_FORBIDDEN,
             )
         }
 
         self.assertSetEqual({frozenset({"a", "b"})}, result)
+
+    def test_auto_sampling_discards_buffered_exhaustive_results_after_threshold(
+        self,
+    ) -> None:
+        graph = nx.DiGraph()
+        graph.add_node("src", forbidden=True)
+        graph.add_node("sink", forbidden=True)
+        graph.add_edges_from(
+            [
+                ("src", "a"),
+                ("a", "b"),
+                ("b", "sink"),
+            ]
+        )
+
+        with (
+            patch.object(mvs_api, "_AUTO_SAMPLING_RESULT_THRESHOLD", 2),
+            patch.object(
+                mvs_api,
+                "_iter_sampled_convex_subgraphs",
+                return_value=iter([{"sample"}]),
+            ) as sampled,
+        ):
+            result = list(
+                enumerate_convex_subgraphs(
+                    graph,
+                    1,
+                    1,
+                    **BODY_ONLY_FORBIDDEN,
+                )
+            )
+
+        self.assertEqual([{"sample"}], result)
+        sampled.assert_called_once()
+
+    def test_sampling_false_keeps_exhaustive_results_after_threshold(
+        self,
+    ) -> None:
+        graph = nx.DiGraph()
+        graph.add_node("src", forbidden=True)
+        graph.add_node("sink", forbidden=True)
+        graph.add_edges_from(
+            [
+                ("src", "a"),
+                ("a", "b"),
+                ("b", "sink"),
+            ]
+        )
+
+        with (
+            patch.object(mvs_api, "_AUTO_SAMPLING_RESULT_THRESHOLD", 1),
+            patch.object(
+                mvs_api,
+                "_iter_sampled_convex_subgraphs",
+                return_value=iter([{"sample"}]),
+            ) as sampled,
+        ):
+            result = {
+                frozenset(nodes)
+                for nodes in enumerate_convex_subgraphs(
+                    graph,
+                    1,
+                    1,
+                    sampling=False,
+                    **BODY_ONLY_FORBIDDEN,
+                )
+            }
+
+        self.assertSetEqual(
+            {
+                frozenset({"a"}),
+                frozenset({"b"}),
+                frozenset({"a", "b"}),
+            },
+            result,
+        )
+        sampled.assert_not_called()
+
+    def test_sampling_true_uses_sampler_immediately(self) -> None:
+        graph = nx.DiGraph()
+        graph.add_node("src", forbidden=True)
+        graph.add_edge("src", "a")
+
+        with patch.object(
+            mvs_api,
+            "_iter_sampled_convex_subgraphs",
+            return_value=iter([{"sample"}]),
+        ) as sampled:
+            result = list(
+                enumerate_convex_subgraphs(
+                    graph,
+                    1,
+                    1,
+                    sampling=True,
+                    **BODY_ONLY_FORBIDDEN,
+                )
+            )
+
+        self.assertEqual([{"sample"}], result)
+        sampled.assert_called_once()
+
+    def test_maximum_auto_sampling_uses_sampled_candidates_after_threshold(
+        self,
+    ) -> None:
+        graph = nx.DiGraph()
+        graph.add_node("src", forbidden=True)
+        graph.add_node("sink", forbidden=True)
+        graph.add_edges_from(
+            [
+                ("src", "a"),
+                ("a", "b"),
+                ("b", "sink"),
+            ]
+        )
+
+        with (
+            patch.object(mvs_api, "_AUTO_SAMPLING_RESULT_THRESHOLD", 1),
+            patch.object(
+                mvs_api,
+                "_iter_sampled_convex_subgraphs",
+                return_value=iter([{"a"}]),
+            ) as sampled,
+        ):
+            result = {
+                frozenset(nodes)
+                for nodes in enumerate_maximum_convex_subgraphs(
+                    graph,
+                    1,
+                    1,
+                    **BODY_ONLY_FORBIDDEN,
+                )
+            }
+
+        self.assertSetEqual({frozenset({"a"})}, result)
+        sampled.assert_called_once()
 
     def test_alternate_graph_closure_rejects_body_forbidden_nodes(self) -> None:
         graph = nx.DiGraph()
