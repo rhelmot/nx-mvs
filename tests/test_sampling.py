@@ -2,20 +2,115 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from pathlib import Path
+import pickle
 import unittest
 from typing import Literal
 
 import networkx as nx
 
 from mvs import (
-    enumerate_convex_subgraphs,
-    grow_nonzero_output_convex_subgraphs,
-    grow_zero_output_convex_subgraphs,
-    sample_nonzero_output_convex_subgraphs,
-    sample_zero_output_convex_subgraphs,
+    ConvexSubgraphQuery,
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
+def _sampling_query_kwargs(kwargs: dict[str, object]) -> dict[str, object]:
+    sampling_names = {
+        "max_states_expanded": "sampling_max_states_expanded",
+        "max_samples": "sampling_max_samples",
+        "max_children_per_state": "sampling_max_children_per_state",
+        "size_bin_width": "sampling_size_bin_width",
+        "thicken_radius": "sampling_thicken_radius",
+        "bucket_by_num_inputs": "sampling_bucket_by_num_inputs",
+        "bucket_by_num_outputs": "sampling_bucket_by_num_outputs",
+        "minimal_node_bin_width": "sampling_minimal_node_bin_width",
+        "boundary_pair_samples": "sampling_boundary_pair_samples",
+        "sampling_passes": "sampling_passes",
+        "exact_kernel_size": "sampling_exact_kernel_size",
+    }
+    return {sampling_names.get(name, name): value for name, value in kwargs.items()}
+
+
+def enumerate_convex_subgraphs(
+    graph: nx.DiGraph,
+    max_num_inputs: int,
+    max_num_outputs: int,
+    **kwargs: object,
+):
+    sampling = kwargs.pop("sampling", None)
+    max_queue_size = kwargs.pop("max_queue_size", 128)
+    return ConvexSubgraphQuery(
+        graph,
+        max_num_inputs=max_num_inputs,
+        max_num_outputs=max_num_outputs,
+        **kwargs,
+    ).enumerate(
+        sampling=sampling,  # type: ignore[arg-type]
+        max_queue_size=max_queue_size,  # type: ignore[arg-type]
+    )
+
+
+def sample_zero_output_convex_subgraphs(
+    graph: nx.DiGraph,
+    max_num_inputs: int,
+    **kwargs: object,
+):
+    return ConvexSubgraphQuery(
+        graph,
+        max_num_inputs=max_num_inputs,
+        max_num_outputs=0,
+        **_sampling_query_kwargs(kwargs),
+    ).sample()
+
+
+def sample_nonzero_output_convex_subgraphs(
+    graph: nx.DiGraph,
+    max_num_inputs: int,
+    max_num_outputs: int,
+    **kwargs: object,
+):
+    return ConvexSubgraphQuery(
+        graph,
+        max_num_inputs=max_num_inputs,
+        max_num_outputs=max_num_outputs,
+        **_sampling_query_kwargs(kwargs),
+    ).sample()
+
+
+def grow_zero_output_convex_subgraphs(
+    graph: nx.DiGraph,
+    seed_nodes: set,
+    **kwargs: object,
+):
+    oracle = kwargs.pop("oracle", None)
+    initial_oracle_state = kwargs.pop("initial_oracle_state", None)
+    return ConvexSubgraphQuery(
+        graph,
+        max_num_outputs=0,
+        **kwargs,
+    ).grow(
+        seed_nodes,
+        oracle=oracle,  # type: ignore[arg-type]
+        initial_oracle_state=initial_oracle_state,
+    )
+
+
+def grow_nonzero_output_convex_subgraphs(
+    graph: nx.DiGraph,
+    seed_nodes: set,
+    **kwargs: object,
+):
+    oracle = kwargs.pop("oracle", None)
+    initial_oracle_state = kwargs.pop("initial_oracle_state", None)
+    return ConvexSubgraphQuery(
+        graph,
+        **kwargs,
+    ).grow(
+        seed_nodes,
+        oracle=oracle,  # type: ignore[arg-type]
+        initial_oracle_state=initial_oracle_state,
+    )
 
 
 def _sample_sets(
@@ -104,8 +199,9 @@ def _launch_distance(
     return best
 
 
-def _read_dot_graph(path: Path) -> nx.DiGraph[str]:
-    return nx.DiGraph(nx.nx_pydot.read_dot(path))
+def _read_pickle_graph(path: Path) -> nx.DiGraph[str]:
+    with path.open("rb") as handle:
+        return pickle.load(handle)
 
 
 def _build_validator(
@@ -534,10 +630,10 @@ class TestSampling(unittest.TestCase):
         )
 
     def test_real_graph_samples_are_unique_and_valid(self) -> None:
-        if not (REPO_ROOT / "data/graph.dot").exists() or not (REPO_ROOT / "data/graph-alt.dot").exists():
-            self.skipTest("repo-level graph DOT test inputs are not present")
-        graph = _read_dot_graph(REPO_ROOT / "data/graph.dot")
-        alternate_graph = _read_dot_graph(REPO_ROOT / "data/graph-alt.dot")
+        if not (REPO_ROOT / "data/graph.p").exists() or not (REPO_ROOT / "data/graph-alt.p").exists():
+            self.skipTest("repo-level graph pickle test inputs are not present")
+        graph = _read_pickle_graph(REPO_ROOT / "data/graph.p")
+        alternate_graph = _read_pickle_graph(REPO_ROOT / "data/graph-alt.p")
         validate = _build_validator(graph, alternate_graph)
 
         samples = list(

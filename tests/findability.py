@@ -9,7 +9,7 @@ from typing import Literal, TypeVar, cast
 
 import networkx as nx
 
-from mvs import graph_to_input, sample_zero_output_convex_subgraphs
+from mvs import ConvexSubgraphQuery, graph_to_input
 
 
 NodeT = TypeVar("NodeT", bound=Hashable)
@@ -384,9 +384,10 @@ def measure_findability(
 
     samples = [
         frozenset(sample)
-        for sample in sample_zero_output_convex_subgraphs(
+        for sample in ConvexSubgraphQuery(
             loaded_graph,
-            max_num_inputs,
+            max_num_inputs=max_num_inputs,
+            max_num_outputs=0,
             alternate_graph=loaded_alternate_graph,
             max_subgraph_size=max_subgraph_size,
             forbid_sources_and_sinks=forbid_sources_and_sinks,
@@ -394,16 +395,16 @@ def measure_findability(
             body_forbidden_attr=body_forbidden_attr,
             input_forbidden_attr=input_forbidden_attr,
             ordering=ordering,
-            max_states_expanded=max_states_expanded,
-            max_samples=max_samples,
-            max_children_per_state=max_children_per_state,
-            size_bin_width=size_bin_width,
-            thicken_radius=thicken_radius,
-            bucket_by_num_inputs=bucket_by_num_inputs,
-            minimal_node_bin_width=minimal_node_bin_width,
+            sampling_max_states_expanded=max_states_expanded,
+            sampling_max_samples=max_samples,
+            sampling_max_children_per_state=max_children_per_state,
+            sampling_size_bin_width=size_bin_width,
+            sampling_thicken_radius=thicken_radius,
+            sampling_bucket_by_num_inputs=bucket_by_num_inputs,
+            sampling_minimal_node_bin_width=minimal_node_bin_width,
             sampling_passes=sampling_passes,
-            exact_kernel_size=exact_kernel_size,
-        )
+            sampling_exact_kernel_size=exact_kernel_size,
+        ).sample()
     ]
 
     sample_masks = [

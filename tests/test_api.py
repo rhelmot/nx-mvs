@@ -10,17 +10,90 @@ import networkx as nx
 
 import mvs._api as mvs_api
 from mvs import (
-    enumerate_convex_subgraphs,
-    enumerate_maximum_convex_subgraphs,
+    ConvexSubgraphQuery,
     graph_to_input,
-    grow_zero_output_convex_subgraphs as _grow_zero_output_convex_subgraphs,
-    sample_zero_output_convex_subgraphs,
 )
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 BODY_ONLY_FORBIDDEN = {"forbidden_attr": None, "body_forbidden_attr": "forbidden"}
 GraphSource = nx.DiGraph | str | PathLike[str]
+
+
+def enumerate_convex_subgraphs(
+    graph: nx.DiGraph,
+    max_num_inputs: int | None = None,
+    max_num_outputs: int | None = None,
+    **kwargs: object,
+) -> Iterator[set[Hashable]]:
+    if max_num_inputs is None:
+        max_num_inputs = kwargs.pop("max_num_inputs")  # type: ignore[assignment]
+    if max_num_outputs is None:
+        max_num_outputs = kwargs.pop("max_num_outputs")  # type: ignore[assignment]
+    sampling = kwargs.pop("sampling", None)
+    max_queue_size = kwargs.pop("max_queue_size", 128)
+    return ConvexSubgraphQuery(
+        graph,
+        max_num_inputs=max_num_inputs,
+        max_num_outputs=max_num_outputs,
+        **kwargs,
+    ).enumerate(
+        sampling=sampling,  # type: ignore[arg-type]
+        max_queue_size=max_queue_size,  # type: ignore[arg-type]
+    )
+
+
+def enumerate_maximum_convex_subgraphs(
+    graph: nx.DiGraph,
+    max_num_inputs: int | None = None,
+    max_num_outputs: int | None = None,
+    **kwargs: object,
+) -> Iterator[set[Hashable]]:
+    if max_num_inputs is None:
+        max_num_inputs = kwargs.pop("max_num_inputs")  # type: ignore[assignment]
+    if max_num_outputs is None:
+        max_num_outputs = kwargs.pop("max_num_outputs")  # type: ignore[assignment]
+    sampling = kwargs.pop("sampling", None)
+    iteration_type = kwargs.pop("iteration_type", "linear-rev")
+    flags = kwargs.pop("flags", 0xFF)
+    return ConvexSubgraphQuery(
+        graph,
+        max_num_inputs=max_num_inputs,
+        max_num_outputs=max_num_outputs,
+        **kwargs,
+    ).maximum(
+        sampling=sampling,  # type: ignore[arg-type]
+        iteration_type=iteration_type,  # type: ignore[arg-type]
+        flags=flags,  # type: ignore[arg-type]
+    )
+
+
+def sample_zero_output_convex_subgraphs(
+    graph: nx.DiGraph,
+    max_num_inputs: int,
+    **kwargs: object,
+) -> Iterator[set[Hashable]]:
+    sampling_names = {
+        "max_states_expanded": "sampling_max_states_expanded",
+        "max_samples": "sampling_max_samples",
+        "max_children_per_state": "sampling_max_children_per_state",
+        "size_bin_width": "sampling_size_bin_width",
+        "thicken_radius": "sampling_thicken_radius",
+        "bucket_by_num_inputs": "sampling_bucket_by_num_inputs",
+        "minimal_node_bin_width": "sampling_minimal_node_bin_width",
+        "sampling_passes": "sampling_passes",
+        "exact_kernel_size": "sampling_exact_kernel_size",
+    }
+    query_kwargs = {
+        sampling_names.get(name, name): value
+        for name, value in kwargs.items()
+    }
+    return ConvexSubgraphQuery(
+        graph,
+        max_num_inputs=max_num_inputs,
+        max_num_outputs=0,
+        **query_kwargs,
+    ).sample()
 
 
 def _load_graph(source: GraphSource | None) -> nx.DiGraph | None:
@@ -45,16 +118,20 @@ def grow_zero_output_convex_subgraphs(
     body_forbidden_attr: str | None = None,
     input_forbidden_attr: str | None = None,
 ) -> Iterator[set[Hashable]]:
-    yield from _grow_zero_output_convex_subgraphs(
-        _load_graph(graph),
-        set(seed_nodes),
-        alternate_graph=_load_graph(alternate_graph),
+    loaded_graph = _load_graph(graph)
+    assert loaded_graph is not None
+    yield from ConvexSubgraphQuery(
+        loaded_graph,
         max_num_inputs=max_num_inputs,
+        max_num_outputs=0,
+        alternate_graph=_load_graph(alternate_graph),
         max_subgraph_size=max_subgraph_size,
         forbidden_attr=forbidden_attr,
         body_forbidden_attr=body_forbidden_attr,
         input_forbidden_attr=input_forbidden_attr,
         forbid_sources_and_sinks=forbid_sources_and_sinks,
+    ).grow(
+        set(seed_nodes),
         oracle=oracle,
         initial_oracle_state=initial_oracle_state,
     )
@@ -85,6 +162,60 @@ def read_dimacs_graph(path: Path, *, weighted: bool) -> nx.DiGraph[int]:
 
 
 class TestMVS(unittest.TestCase):
+    def test_query_object_matches_function_api(self) -> None:
+        graph = nx.DiGraph()
+        graph.add_node("src", forbidden=True)
+        graph.add_node("sink", forbidden=True)
+        graph.add_edges_from(
+            [
+                ("src", "a"),
+                ("a", "b"),
+                ("b", "sink"),
+            ]
+        )
+
+        query = ConvexSubgraphQuery(
+            graph,
+            max_num_inputs=1,
+            max_num_outputs=1,
+            forbidden_attr=None,
+            body_forbidden_attr="forbidden",
+            sampling_max_states_expanded=0,
+            sampling_max_samples=2,
+            sampling_boundary_pair_samples=2,
+        )
+
+        self.assertSetEqual(
+            {
+                frozenset(nodes)
+                for nodes in enumerate_convex_subgraphs(
+                    graph,
+                    1,
+                    1,
+                    sampling=False,
+                    **BODY_ONLY_FORBIDDEN,
+                )
+            },
+            {frozenset(nodes) for nodes in query.enumerate(sampling=False)},
+        )
+        self.assertSetEqual(
+            {
+                frozenset(nodes)
+                for nodes in enumerate_maximum_convex_subgraphs(
+                    graph,
+                    1,
+                    1,
+                    sampling=False,
+                    **BODY_ONLY_FORBIDDEN,
+                )
+            },
+            {frozenset(nodes) for nodes in query.maximum(sampling=False)},
+        )
+        self.assertSetEqual(
+            {frozenset({"a"}), frozenset({"b"})},
+            {frozenset(nodes) for nodes in query.sample()},
+        )
+
     def test_maximum_enumeration_with_opted_in_sources_and_sinks(self) -> None:
         graph = nx.DiGraph()
         graph.add_node("sink", forbidden=True)
@@ -981,7 +1112,7 @@ class TestMVS(unittest.TestCase):
         with (
             patch.object(mvs_api, "_AUTO_SAMPLING_RESULT_THRESHOLD", 2),
             patch.object(
-                mvs_api,
+                ConvexSubgraphQuery,
                 "_iter_sampled_convex_subgraphs",
                 return_value=iter([{"sample"}]),
             ) as sampled,
@@ -1015,7 +1146,7 @@ class TestMVS(unittest.TestCase):
         with (
             patch.object(mvs_api, "_AUTO_SAMPLING_RESULT_THRESHOLD", 1),
             patch.object(
-                mvs_api,
+                ConvexSubgraphQuery,
                 "_iter_sampled_convex_subgraphs",
                 return_value=iter([{"sample"}]),
             ) as sampled,
@@ -1047,7 +1178,7 @@ class TestMVS(unittest.TestCase):
         graph.add_edge("src", "a")
 
         with patch.object(
-            mvs_api,
+            ConvexSubgraphQuery,
             "_iter_sampled_convex_subgraphs",
             return_value=iter([{"sample"}]),
         ) as sampled:
@@ -1081,7 +1212,7 @@ class TestMVS(unittest.TestCase):
         with (
             patch.object(mvs_api, "_AUTO_SAMPLING_RESULT_THRESHOLD", 1),
             patch.object(
-                mvs_api,
+                ConvexSubgraphQuery,
                 "_iter_sampled_convex_subgraphs",
                 return_value=iter([{"a"}]),
             ) as sampled,
