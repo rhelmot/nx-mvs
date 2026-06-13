@@ -26,6 +26,223 @@ _AUTO_SAMPLING_RESULT_THRESHOLD = 10_000
 
 @dataclass(frozen=True, slots=True)
 class ConvexSubgraphQuery(Generic[NodeT]):
+    sampling_max_states_expanded: int = 10000
+    sampling_max_samples: int = 1000
+    sampling_max_children_per_state: int = 2
+    sampling_size_bin_width: int = 4
+    sampling_thicken_radius: int = 1
+    sampling_bucket_by_num_inputs: bool = True
+    sampling_bucket_by_num_outputs: bool = True
+    sampling_minimal_node_bin_width: int = 1
+    sampling_boundary_pair_samples: int = 512
+    sampling_passes: int = 1
+    sampling_exact_kernel_size: int = 0
+
+    def enumerate(
+        self,
+        graph: nx.DiGraph[NodeT],
+        max_num_inputs: int,
+        max_num_outputs: int = 1,
+        *,
+        alternate_graph: nx.DiGraph[NodeT] | None = None,
+        max_subgraph_size: int | None = None,
+        weighted: bool = False,
+        weight_attr: str = "weight",
+        forbidden_attr: str | None = "forbidden",
+        body_forbidden_attr: str | None = None,
+        input_forbidden_attr: str | None = None,
+        forbid_sources_and_sinks: bool = True,
+        allow_zero_outputs: bool = False,
+        connected_only: bool = False,
+        ordering: Ordering = "toposort",
+        sampling: bool | None = None,
+        max_queue_size: int = 128,
+    ) -> Iterator[set[NodeT]]:
+        return self._operation(
+            graph,
+            max_num_inputs,
+            max_num_outputs,
+            alternate_graph=alternate_graph,
+            max_subgraph_size=max_subgraph_size,
+            weighted=weighted,
+            weight_attr=weight_attr,
+            forbidden_attr=forbidden_attr,
+            body_forbidden_attr=body_forbidden_attr,
+            input_forbidden_attr=input_forbidden_attr,
+            forbid_sources_and_sinks=forbid_sources_and_sinks,
+            allow_zero_outputs=allow_zero_outputs,
+            connected_only=connected_only,
+            ordering=ordering,
+        ).enumerate(sampling=sampling, max_queue_size=max_queue_size)
+
+    def sample(
+        self,
+        graph: nx.DiGraph[NodeT],
+        max_num_inputs: int,
+        max_num_outputs: int = 1,
+        *,
+        alternate_graph: nx.DiGraph[NodeT] | None = None,
+        max_subgraph_size: int | None = None,
+        weighted: bool = False,
+        weight_attr: str = "weight",
+        forbidden_attr: str | None = "forbidden",
+        body_forbidden_attr: str | None = None,
+        input_forbidden_attr: str | None = None,
+        forbid_sources_and_sinks: bool = True,
+        allow_zero_outputs: bool = False,
+        connected_only: bool = False,
+        ordering: Ordering = "toposort",
+    ) -> Iterator[set[NodeT]]:
+        return self._operation(
+            graph,
+            max_num_inputs,
+            max_num_outputs,
+            alternate_graph=alternate_graph,
+            max_subgraph_size=max_subgraph_size,
+            weighted=weighted,
+            weight_attr=weight_attr,
+            forbidden_attr=forbidden_attr,
+            body_forbidden_attr=body_forbidden_attr,
+            input_forbidden_attr=input_forbidden_attr,
+            forbid_sources_and_sinks=forbid_sources_and_sinks,
+            allow_zero_outputs=allow_zero_outputs,
+            connected_only=connected_only,
+            ordering=ordering,
+        ).sample()
+
+    def maximum(
+        self,
+        graph: nx.DiGraph[NodeT],
+        max_num_inputs: int,
+        max_num_outputs: int = 1,
+        *,
+        alternate_graph: nx.DiGraph[NodeT] | None = None,
+        max_subgraph_size: int | None = None,
+        weighted: bool = False,
+        weight_attr: str = "weight",
+        forbidden_attr: str | None = "forbidden",
+        body_forbidden_attr: str | None = None,
+        input_forbidden_attr: str | None = None,
+        forbid_sources_and_sinks: bool = True,
+        allow_zero_outputs: bool = False,
+        connected_only: bool = False,
+        ordering: Ordering = "toposort",
+        sampling: bool | None = None,
+        iteration_type: str = "linear-rev",
+        flags: int = 0xFF,
+    ) -> Iterator[set[NodeT]]:
+        return self._operation(
+            graph,
+            max_num_inputs,
+            max_num_outputs,
+            alternate_graph=alternate_graph,
+            max_subgraph_size=max_subgraph_size,
+            weighted=weighted,
+            weight_attr=weight_attr,
+            forbidden_attr=forbidden_attr,
+            body_forbidden_attr=body_forbidden_attr,
+            input_forbidden_attr=input_forbidden_attr,
+            forbid_sources_and_sinks=forbid_sources_and_sinks,
+            allow_zero_outputs=allow_zero_outputs,
+            connected_only=connected_only,
+            ordering=ordering,
+        ).maximum(
+            sampling=sampling,
+            iteration_type=iteration_type,
+            flags=flags,
+        )
+
+    def grow(
+        self,
+        graph: nx.DiGraph[NodeT],
+        seed_nodes: set[NodeT],
+        *,
+        max_num_inputs: int = 4,
+        max_num_outputs: int = 1,
+        alternate_graph: nx.DiGraph[NodeT] | None = None,
+        max_subgraph_size: int | None = None,
+        weighted: bool = False,
+        weight_attr: str = "weight",
+        forbidden_attr: str | None = "forbidden",
+        body_forbidden_attr: str | None = None,
+        input_forbidden_attr: str | None = None,
+        forbid_sources_and_sinks: bool = False,
+        allow_zero_outputs: bool = False,
+        connected_only: bool = False,
+        ordering: Ordering = "toposort",
+        oracle: Callable[..., object | None] | None = None,
+        initial_oracle_state: object | None = None,
+    ) -> Iterator[set[NodeT]]:
+        return self._operation(
+            graph,
+            max_num_inputs,
+            max_num_outputs,
+            alternate_graph=alternate_graph,
+            max_subgraph_size=max_subgraph_size,
+            weighted=weighted,
+            weight_attr=weight_attr,
+            forbidden_attr=forbidden_attr,
+            body_forbidden_attr=body_forbidden_attr,
+            input_forbidden_attr=input_forbidden_attr,
+            forbid_sources_and_sinks=forbid_sources_and_sinks,
+            allow_zero_outputs=allow_zero_outputs,
+            connected_only=connected_only,
+            ordering=ordering,
+        ).grow(
+            seed_nodes,
+            oracle=oracle,
+            initial_oracle_state=initial_oracle_state,
+        )
+
+    def _operation(
+        self,
+        graph: nx.DiGraph[NodeT],
+        max_num_inputs: int,
+        max_num_outputs: int,
+        *,
+        alternate_graph: nx.DiGraph[NodeT] | None,
+        max_subgraph_size: int | None,
+        weighted: bool,
+        weight_attr: str,
+        forbidden_attr: str | None,
+        body_forbidden_attr: str | None,
+        input_forbidden_attr: str | None,
+        forbid_sources_and_sinks: bool,
+        allow_zero_outputs: bool,
+        connected_only: bool,
+        ordering: Ordering,
+    ) -> _ConvexSubgraphOperation[NodeT]:
+        return _ConvexSubgraphOperation(
+            graph,
+            max_num_inputs=max_num_inputs,
+            max_num_outputs=max_num_outputs,
+            alternate_graph=alternate_graph,
+            max_subgraph_size=max_subgraph_size,
+            weighted=weighted,
+            weight_attr=weight_attr,
+            forbidden_attr=forbidden_attr,
+            body_forbidden_attr=body_forbidden_attr,
+            input_forbidden_attr=input_forbidden_attr,
+            forbid_sources_and_sinks=forbid_sources_and_sinks,
+            allow_zero_outputs=allow_zero_outputs,
+            connected_only=connected_only,
+            ordering=ordering,
+            sampling_max_states_expanded=self.sampling_max_states_expanded,
+            sampling_max_samples=self.sampling_max_samples,
+            sampling_max_children_per_state=self.sampling_max_children_per_state,
+            sampling_size_bin_width=self.sampling_size_bin_width,
+            sampling_thicken_radius=self.sampling_thicken_radius,
+            sampling_bucket_by_num_inputs=self.sampling_bucket_by_num_inputs,
+            sampling_bucket_by_num_outputs=self.sampling_bucket_by_num_outputs,
+            sampling_minimal_node_bin_width=self.sampling_minimal_node_bin_width,
+            sampling_boundary_pair_samples=self.sampling_boundary_pair_samples,
+            sampling_passes=self.sampling_passes,
+            sampling_exact_kernel_size=self.sampling_exact_kernel_size,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class _ConvexSubgraphOperation(Generic[NodeT]):
     graph: nx.DiGraph[NodeT]
     max_num_inputs: int
     max_num_outputs: int = 1
