@@ -582,8 +582,10 @@ def sample_zero_output_convex_subgraphs(
         size_bin_width=size_bin_width,
         pass_count=sampling_passes,
     )
-    per_pass_states = max(1, math.ceil(max_states_expanded / len(pass_configs)))
-    per_pass_samples = max(1, math.ceil(max_samples / len(pass_configs)))
+    per_pass_states = (
+        0 if max_states_expanded == 0
+        else max(1, math.ceil(max_states_expanded / len(pass_configs)))
+    )
 
     def iter_component_samples() -> Iterator[set[NodeT]]:
         for component_nodes in _connected_component_node_sets(graph, alternate_graph):
@@ -594,6 +596,7 @@ def sample_zero_output_convex_subgraphs(
                 else None
             )
             seen: set[frozenset[NodeT]] = set()
+            emitted_count = 0
 
             if exact_kernel_size > 0:
                 exact_limit = (
@@ -622,9 +625,35 @@ def sample_zero_output_convex_subgraphs(
                     if key in seen:
                         continue
                     seen.add(key)
+                    emitted_count += 1
                     yield subgraph
+                    if max_samples > 0 and emitted_count >= max_samples:
+                        return
 
-            for pass_ordering, pass_children, pass_size_bin_width in pass_configs:
+            for pass_index, (
+                pass_ordering,
+                pass_children,
+                pass_size_bin_width,
+            ) in enumerate(pass_configs):
+                if max_samples <= 0:
+                    return
+                remaining_samples = max_samples - emitted_count
+                if remaining_samples <= 0:
+                    return
+                remaining_passes = len(pass_configs) - pass_index
+                pass_samples = max(1, math.ceil(remaining_samples / remaining_passes))
+                pass_states = (
+                    0 if max_states_expanded == 0
+                    else min(
+                        per_pass_states,
+                        max(
+                            1,
+                            math.ceil(
+                                per_pass_states * remaining_samples / max_samples
+                            ),
+                        ),
+                    )
+                )
                 payload, node_order = graph_to_input(
                     component,
                     alternate_graph=component_alternate,
@@ -640,8 +669,8 @@ def sample_zero_output_convex_subgraphs(
                     payload,
                     max_num_inputs,
                     native_max_subgraph_size,
-                    max_states_expanded=per_pass_states,
-                    max_samples=per_pass_samples,
+                    max_states_expanded=pass_states,
+                    max_samples=pass_samples,
                     max_children_per_state=pass_children,
                     size_bin_width=pass_size_bin_width,
                     thicken_radius=thicken_radius,
@@ -656,7 +685,10 @@ def sample_zero_output_convex_subgraphs(
                     if key in seen:
                         continue
                     seen.add(key)
+                    emitted_count += 1
                     yield nodes
+                    if max_samples > 0 and emitted_count >= max_samples:
+                        return
 
     return iter_component_samples()
 
@@ -722,8 +754,10 @@ def sample_nonzero_output_convex_subgraphs(
         size_bin_width=size_bin_width,
         pass_count=sampling_passes,
     )
-    per_pass_states = max(1, math.ceil(max_states_expanded / len(pass_configs)))
-    per_pass_samples = max(1, math.ceil(max_samples / len(pass_configs)))
+    per_pass_states = (
+        0 if max_states_expanded == 0
+        else max(1, math.ceil(max_states_expanded / len(pass_configs)))
+    )
 
     def iter_component_samples() -> Iterator[set[NodeT]]:
         for component_nodes in _connected_component_node_sets(graph, alternate_graph):
@@ -734,6 +768,7 @@ def sample_nonzero_output_convex_subgraphs(
                 else None
             )
             seen: set[frozenset[NodeT]] = set()
+            emitted_count = 0
 
             if exact_kernel_size > 0:
                 exact_limit = (
@@ -762,9 +797,40 @@ def sample_nonzero_output_convex_subgraphs(
                     if key in seen:
                         continue
                     seen.add(key)
+                    emitted_count += 1
                     yield subgraph
+                    if max_samples > 0 and emitted_count >= max_samples:
+                        return
 
-            for pass_ordering, pass_children, pass_size_bin_width in pass_configs:
+            for pass_index, (
+                pass_ordering,
+                pass_children,
+                pass_size_bin_width,
+            ) in enumerate(pass_configs):
+                if max_samples <= 0:
+                    return
+                remaining_samples = max_samples - emitted_count
+                if remaining_samples <= 0:
+                    return
+                remaining_passes = len(pass_configs) - pass_index
+                pass_samples = max(1, math.ceil(remaining_samples / remaining_passes))
+                pass_states = (
+                    0 if max_states_expanded == 0
+                    else min(
+                        per_pass_states,
+                        max(
+                            1,
+                            math.ceil(
+                                per_pass_states * remaining_samples / max_samples
+                            ),
+                        ),
+                    )
+                )
+                pass_boundary_pair_samples = (
+                    boundary_pair_samples
+                    if pass_index == 0
+                    else min(boundary_pair_samples, 32)
+                )
                 payload, node_order = graph_to_input(
                     component,
                     alternate_graph=component_alternate,
@@ -781,15 +847,15 @@ def sample_nonzero_output_convex_subgraphs(
                     max_num_inputs,
                     max_num_outputs,
                     native_max_subgraph_size,
-                    max_states_expanded=per_pass_states,
-                    max_samples=per_pass_samples,
+                    max_states_expanded=pass_states,
+                    max_samples=pass_samples,
                     max_children_per_state=pass_children,
                     size_bin_width=pass_size_bin_width,
                     thicken_radius=thicken_radius,
                     bucket_by_num_inputs=bucket_by_num_inputs,
                     bucket_by_num_outputs=bucket_by_num_outputs,
                     minimal_node_bin_width=minimal_node_bin_width,
-                    boundary_pair_samples=boundary_pair_samples,
+                    boundary_pair_samples=pass_boundary_pair_samples,
                 )
                 for subgraph in result.subgraphs:
                     nodes = {node_order[index] for index in subgraph}
@@ -799,7 +865,10 @@ def sample_nonzero_output_convex_subgraphs(
                     if key in seen:
                         continue
                     seen.add(key)
+                    emitted_count += 1
                     yield nodes
+                    if max_samples > 0 and emitted_count >= max_samples:
+                        return
 
     return iter_component_samples()
 
