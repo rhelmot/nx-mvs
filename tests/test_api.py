@@ -18,6 +18,51 @@ from mvs import (
 REPO_ROOT = Path(__file__).resolve().parents[1]
 BODY_ONLY_FORBIDDEN = {"forbidden_attr": None, "body_forbidden_attr": "forbidden"}
 GraphSource = nx.DiGraph | str | PathLike[str]
+QUERY_CONFIG_KEYS = {
+    "max_subgraph_size",
+    "weighted",
+    "weight_attr",
+    "forbidden_attr",
+    "body_forbidden_attr",
+    "input_forbidden_attr",
+    "forbid_sources_and_sinks",
+    "connected_only",
+    "max_queue_size",
+    "iteration_type",
+    "flags",
+    "ordering",
+}
+SAMPLING_NAMES = {
+    "max_states_expanded": "sampling_max_states_expanded",
+    "max_samples": "sampling_max_samples",
+    "max_children_per_state": "sampling_max_children_per_state",
+    "size_bin_width": "sampling_size_bin_width",
+    "thicken_radius": "sampling_thicken_radius",
+    "bucket_by_num_inputs": "sampling_bucket_by_num_inputs",
+    "bucket_by_num_outputs": "sampling_bucket_by_num_outputs",
+    "minimal_node_bin_width": "sampling_minimal_node_bin_width",
+    "boundary_pair_samples": "sampling_boundary_pair_samples",
+    "sampling_passes": "sampling_passes",
+    "exact_kernel_size": "sampling_exact_kernel_size",
+}
+
+
+def _split_query_kwargs(kwargs: dict[str, object]) -> tuple[dict[str, object], dict[str, object]]:
+    query_kwargs = {
+        SAMPLING_NAMES.get(name, name): value
+        for name, value in kwargs.items()
+    }
+    constructor_kwargs = {
+        name: value
+        for name, value in query_kwargs.items()
+        if name in QUERY_CONFIG_KEYS or name.startswith("sampling_")
+    }
+    method_kwargs = {
+        name: value
+        for name, value in query_kwargs.items()
+        if name not in constructor_kwargs
+    }
+    return constructor_kwargs, method_kwargs
 
 
 def enumerate_convex_subgraphs(
@@ -31,14 +76,13 @@ def enumerate_convex_subgraphs(
     if max_num_outputs is None:
         max_num_outputs = kwargs.pop("max_num_outputs")  # type: ignore[assignment]
     sampling = kwargs.pop("sampling", None)
-    max_queue_size = kwargs.pop("max_queue_size", 128)
-    return ConvexSubgraphQuery().enumerate(
+    constructor_kwargs, method_kwargs = _split_query_kwargs(kwargs)
+    return ConvexSubgraphQuery(**constructor_kwargs).enumerate(
         graph,
         max_num_inputs=max_num_inputs,
         max_num_outputs=max_num_outputs,
-        **kwargs,
+        **method_kwargs,
         sampling=sampling,  # type: ignore[arg-type]
-        max_queue_size=max_queue_size,  # type: ignore[arg-type]
     )
 
 
@@ -53,16 +97,13 @@ def enumerate_maximum_convex_subgraphs(
     if max_num_outputs is None:
         max_num_outputs = kwargs.pop("max_num_outputs")  # type: ignore[assignment]
     sampling = kwargs.pop("sampling", None)
-    iteration_type = kwargs.pop("iteration_type", "linear-rev")
-    flags = kwargs.pop("flags", 0xFF)
-    return ConvexSubgraphQuery().maximum(
+    constructor_kwargs, method_kwargs = _split_query_kwargs(kwargs)
+    return ConvexSubgraphQuery(**constructor_kwargs).maximum(
         graph,
         max_num_inputs=max_num_inputs,
         max_num_outputs=max_num_outputs,
-        **kwargs,
+        **method_kwargs,
         sampling=sampling,  # type: ignore[arg-type]
-        iteration_type=iteration_type,  # type: ignore[arg-type]
-        flags=flags,  # type: ignore[arg-type]
     )
 
 
@@ -71,36 +112,12 @@ def sample_zero_output_convex_subgraphs(
     max_num_inputs: int,
     **kwargs: object,
 ) -> Iterator[set[Hashable]]:
-    sampling_names = {
-        "max_states_expanded": "sampling_max_states_expanded",
-        "max_samples": "sampling_max_samples",
-        "max_children_per_state": "sampling_max_children_per_state",
-        "size_bin_width": "sampling_size_bin_width",
-        "thicken_radius": "sampling_thicken_radius",
-        "bucket_by_num_inputs": "sampling_bucket_by_num_inputs",
-        "minimal_node_bin_width": "sampling_minimal_node_bin_width",
-        "sampling_passes": "sampling_passes",
-        "exact_kernel_size": "sampling_exact_kernel_size",
-    }
-    query_kwargs = {
-        sampling_names.get(name, name): value
-        for name, value in kwargs.items()
-    }
-    return ConvexSubgraphQuery(
-        **{
-            name: value
-            for name, value in query_kwargs.items()
-            if name.startswith("sampling_")
-        }
-    ).sample(
+    constructor_kwargs, method_kwargs = _split_query_kwargs(kwargs)
+    return ConvexSubgraphQuery(**constructor_kwargs).sample(
         graph,
         max_num_inputs=max_num_inputs,
         max_num_outputs=0,
-        **{
-            name: value
-            for name, value in query_kwargs.items()
-            if not name.startswith("sampling_")
-        },
+        **method_kwargs,
     )
 
 
@@ -128,17 +145,18 @@ def grow_zero_output_convex_subgraphs(
 ) -> Iterator[set[Hashable]]:
     loaded_graph = _load_graph(graph)
     assert loaded_graph is not None
-    yield from ConvexSubgraphQuery().grow(
-        loaded_graph,
-        set(seed_nodes),
-        max_num_inputs=max_num_inputs,
-        max_num_outputs=0,
-        alternate_graph=_load_graph(alternate_graph),
+    yield from ConvexSubgraphQuery(
         max_subgraph_size=max_subgraph_size,
         forbidden_attr=forbidden_attr,
         body_forbidden_attr=body_forbidden_attr,
         input_forbidden_attr=input_forbidden_attr,
         forbid_sources_and_sinks=forbid_sources_and_sinks,
+    ).grow(
+        loaded_graph,
+        set(seed_nodes),
+        max_num_inputs=max_num_inputs,
+        max_num_outputs=0,
+        alternate_graph=_load_graph(alternate_graph),
         oracle=oracle,
         initial_oracle_state=initial_oracle_state,
     )
@@ -182,6 +200,7 @@ class TestMVS(unittest.TestCase):
         )
 
         query = ConvexSubgraphQuery(
+            **BODY_ONLY_FORBIDDEN,
             sampling_max_states_expanded=0,
             sampling_max_samples=2,
             sampling_boundary_pair_samples=2,
@@ -205,7 +224,6 @@ class TestMVS(unittest.TestCase):
                     1,
                     1,
                     sampling=False,
-                    **BODY_ONLY_FORBIDDEN,
                 )
             },
         )
@@ -227,7 +245,6 @@ class TestMVS(unittest.TestCase):
                     1,
                     1,
                     sampling=False,
-                    **BODY_ONLY_FORBIDDEN,
                 )
             },
         )
@@ -239,7 +256,6 @@ class TestMVS(unittest.TestCase):
                     graph,
                     1,
                     1,
-                    **BODY_ONLY_FORBIDDEN,
                 )
             },
         )

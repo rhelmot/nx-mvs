@@ -385,6 +385,12 @@ def measure_findability(
     samples = [
         frozenset(sample)
         for sample in ConvexSubgraphQuery(
+            max_subgraph_size=max_subgraph_size,
+            forbid_sources_and_sinks=forbid_sources_and_sinks,
+            forbidden_attr=forbidden_attr,
+            body_forbidden_attr=body_forbidden_attr,
+            input_forbidden_attr=input_forbidden_attr,
+            ordering=ordering,
             sampling_max_states_expanded=max_states_expanded,
             sampling_max_samples=max_samples,
             sampling_max_children_per_state=max_children_per_state,
@@ -399,12 +405,6 @@ def measure_findability(
             max_num_inputs=max_num_inputs,
             max_num_outputs=0,
             alternate_graph=loaded_alternate_graph,
-            max_subgraph_size=max_subgraph_size,
-            forbid_sources_and_sinks=forbid_sources_and_sinks,
-            forbidden_attr=forbidden_attr,
-            body_forbidden_attr=body_forbidden_attr,
-            input_forbidden_attr=input_forbidden_attr,
-            ordering=ordering,
         )
     ]
 

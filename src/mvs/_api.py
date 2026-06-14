@@ -26,6 +26,18 @@ _AUTO_SAMPLING_RESULT_THRESHOLD = 10_000
 
 @dataclass(frozen=True, slots=True)
 class ConvexSubgraphQuery(Generic[NodeT]):
+    max_subgraph_size: int | None = None
+    weighted: bool = False
+    weight_attr: str = "weight"
+    forbidden_attr: str | None = "forbidden"
+    body_forbidden_attr: str | None = None
+    input_forbidden_attr: str | None = None
+    forbid_sources_and_sinks: bool = True
+    connected_only: bool = False
+    max_queue_size: int = 128
+    iteration_type: str = "linear-rev"
+    flags: int = 0xFF
+    ordering: Ordering = "toposort"
     sampling_max_states_expanded: int = 10000
     sampling_max_samples: int = 1000
     sampling_max_children_per_state: int = 2
@@ -45,35 +57,16 @@ class ConvexSubgraphQuery(Generic[NodeT]):
         max_num_outputs: int = 1,
         *,
         alternate_graph: nx.DiGraph[NodeT] | None = None,
-        max_subgraph_size: int | None = None,
-        weighted: bool = False,
-        weight_attr: str = "weight",
-        forbidden_attr: str | None = "forbidden",
-        body_forbidden_attr: str | None = None,
-        input_forbidden_attr: str | None = None,
-        forbid_sources_and_sinks: bool = True,
         allow_zero_outputs: bool = False,
-        connected_only: bool = False,
-        ordering: Ordering = "toposort",
         sampling: bool | None = None,
-        max_queue_size: int = 128,
     ) -> Iterator[set[NodeT]]:
         return self._operation(
             graph,
             max_num_inputs,
             max_num_outputs,
             alternate_graph=alternate_graph,
-            max_subgraph_size=max_subgraph_size,
-            weighted=weighted,
-            weight_attr=weight_attr,
-            forbidden_attr=forbidden_attr,
-            body_forbidden_attr=body_forbidden_attr,
-            input_forbidden_attr=input_forbidden_attr,
-            forbid_sources_and_sinks=forbid_sources_and_sinks,
             allow_zero_outputs=allow_zero_outputs,
-            connected_only=connected_only,
-            ordering=ordering,
-        ).enumerate(sampling=sampling, max_queue_size=max_queue_size)
+        ).enumerate(sampling=sampling)
 
     def sample(
         self,
@@ -82,32 +75,14 @@ class ConvexSubgraphQuery(Generic[NodeT]):
         max_num_outputs: int = 1,
         *,
         alternate_graph: nx.DiGraph[NodeT] | None = None,
-        max_subgraph_size: int | None = None,
-        weighted: bool = False,
-        weight_attr: str = "weight",
-        forbidden_attr: str | None = "forbidden",
-        body_forbidden_attr: str | None = None,
-        input_forbidden_attr: str | None = None,
-        forbid_sources_and_sinks: bool = True,
         allow_zero_outputs: bool = False,
-        connected_only: bool = False,
-        ordering: Ordering = "toposort",
     ) -> Iterator[set[NodeT]]:
         return self._operation(
             graph,
             max_num_inputs,
             max_num_outputs,
             alternate_graph=alternate_graph,
-            max_subgraph_size=max_subgraph_size,
-            weighted=weighted,
-            weight_attr=weight_attr,
-            forbidden_attr=forbidden_attr,
-            body_forbidden_attr=body_forbidden_attr,
-            input_forbidden_attr=input_forbidden_attr,
-            forbid_sources_and_sinks=forbid_sources_and_sinks,
             allow_zero_outputs=allow_zero_outputs,
-            connected_only=connected_only,
-            ordering=ordering,
         ).sample()
 
     def maximum(
@@ -117,39 +92,17 @@ class ConvexSubgraphQuery(Generic[NodeT]):
         max_num_outputs: int = 1,
         *,
         alternate_graph: nx.DiGraph[NodeT] | None = None,
-        max_subgraph_size: int | None = None,
-        weighted: bool = False,
-        weight_attr: str = "weight",
-        forbidden_attr: str | None = "forbidden",
-        body_forbidden_attr: str | None = None,
-        input_forbidden_attr: str | None = None,
-        forbid_sources_and_sinks: bool = True,
         allow_zero_outputs: bool = False,
-        connected_only: bool = False,
-        ordering: Ordering = "toposort",
         sampling: bool | None = None,
-        iteration_type: str = "linear-rev",
-        flags: int = 0xFF,
     ) -> Iterator[set[NodeT]]:
         return self._operation(
             graph,
             max_num_inputs,
             max_num_outputs,
             alternate_graph=alternate_graph,
-            max_subgraph_size=max_subgraph_size,
-            weighted=weighted,
-            weight_attr=weight_attr,
-            forbidden_attr=forbidden_attr,
-            body_forbidden_attr=body_forbidden_attr,
-            input_forbidden_attr=input_forbidden_attr,
-            forbid_sources_and_sinks=forbid_sources_and_sinks,
             allow_zero_outputs=allow_zero_outputs,
-            connected_only=connected_only,
-            ordering=ordering,
         ).maximum(
             sampling=sampling,
-            iteration_type=iteration_type,
-            flags=flags,
         )
 
     def grow(
@@ -160,16 +113,7 @@ class ConvexSubgraphQuery(Generic[NodeT]):
         max_num_inputs: int = 4,
         max_num_outputs: int = 1,
         alternate_graph: nx.DiGraph[NodeT] | None = None,
-        max_subgraph_size: int | None = None,
-        weighted: bool = False,
-        weight_attr: str = "weight",
-        forbidden_attr: str | None = "forbidden",
-        body_forbidden_attr: str | None = None,
-        input_forbidden_attr: str | None = None,
-        forbid_sources_and_sinks: bool = False,
         allow_zero_outputs: bool = False,
-        connected_only: bool = False,
-        ordering: Ordering = "toposort",
         oracle: Callable[..., object | None] | None = None,
         initial_oracle_state: object | None = None,
     ) -> Iterator[set[NodeT]]:
@@ -178,16 +122,7 @@ class ConvexSubgraphQuery(Generic[NodeT]):
             max_num_inputs,
             max_num_outputs,
             alternate_graph=alternate_graph,
-            max_subgraph_size=max_subgraph_size,
-            weighted=weighted,
-            weight_attr=weight_attr,
-            forbidden_attr=forbidden_attr,
-            body_forbidden_attr=body_forbidden_attr,
-            input_forbidden_attr=input_forbidden_attr,
-            forbid_sources_and_sinks=forbid_sources_and_sinks,
             allow_zero_outputs=allow_zero_outputs,
-            connected_only=connected_only,
-            ordering=ordering,
         ).grow(
             seed_nodes,
             oracle=oracle,
@@ -201,32 +136,26 @@ class ConvexSubgraphQuery(Generic[NodeT]):
         max_num_outputs: int,
         *,
         alternate_graph: nx.DiGraph[NodeT] | None,
-        max_subgraph_size: int | None,
-        weighted: bool,
-        weight_attr: str,
-        forbidden_attr: str | None,
-        body_forbidden_attr: str | None,
-        input_forbidden_attr: str | None,
-        forbid_sources_and_sinks: bool,
         allow_zero_outputs: bool,
-        connected_only: bool,
-        ordering: Ordering,
     ) -> _ConvexSubgraphOperation[NodeT]:
         return _ConvexSubgraphOperation(
             graph,
             max_num_inputs=max_num_inputs,
             max_num_outputs=max_num_outputs,
             alternate_graph=alternate_graph,
-            max_subgraph_size=max_subgraph_size,
-            weighted=weighted,
-            weight_attr=weight_attr,
-            forbidden_attr=forbidden_attr,
-            body_forbidden_attr=body_forbidden_attr,
-            input_forbidden_attr=input_forbidden_attr,
-            forbid_sources_and_sinks=forbid_sources_and_sinks,
+            max_subgraph_size=self.max_subgraph_size,
+            weighted=self.weighted,
+            weight_attr=self.weight_attr,
+            forbidden_attr=self.forbidden_attr,
+            body_forbidden_attr=self.body_forbidden_attr,
+            input_forbidden_attr=self.input_forbidden_attr,
+            forbid_sources_and_sinks=self.forbid_sources_and_sinks,
             allow_zero_outputs=allow_zero_outputs,
-            connected_only=connected_only,
-            ordering=ordering,
+            connected_only=self.connected_only,
+            max_queue_size=self.max_queue_size,
+            iteration_type=self.iteration_type,
+            flags=self.flags,
+            ordering=self.ordering,
             sampling_max_states_expanded=self.sampling_max_states_expanded,
             sampling_max_samples=self.sampling_max_samples,
             sampling_max_children_per_state=self.sampling_max_children_per_state,
@@ -256,6 +185,9 @@ class _ConvexSubgraphOperation(Generic[NodeT]):
     forbid_sources_and_sinks: bool = True
     allow_zero_outputs: bool = False
     connected_only: bool = False
+    max_queue_size: int = 128
+    iteration_type: str = "linear-rev"
+    flags: int = 0xFF
     ordering: Ordering = "toposort"
     sampling_max_states_expanded: int = 10000
     sampling_max_samples: int = 1000
@@ -275,14 +207,12 @@ class _ConvexSubgraphOperation(Generic[NodeT]):
         sampling: bool | None = None,
         allow_zero_outputs: bool | None = None,
         connected_only: bool | None = None,
-        max_queue_size: int = 128,
     ) -> Iterator[set[NodeT]]:
         return self._enumerate_convex_subgraphs(
             allow_zero_outputs=allow_zero_outputs,
             connected_only=connected_only,
             ordering=self.ordering,
             sampling=sampling,
-            max_queue_size=max_queue_size,
         )
 
     def sample(
@@ -320,15 +250,11 @@ class _ConvexSubgraphOperation(Generic[NodeT]):
         sampling: bool | None = None,
         allow_zero_outputs: bool | None = None,
         connected_only: bool | None = None,
-        iteration_type: str = "linear-rev",
-        flags: int = 0xFF,
     ) -> Iterator[set[NodeT]]:
         return self._enumerate_maximum_convex_subgraphs(
             allow_zero_outputs=allow_zero_outputs,
             connected_only=connected_only,
-            iteration_type=iteration_type,
             ordering=self.ordering,
-            flags=flags,
             sampling=sampling,
         )
 
@@ -382,9 +308,7 @@ class _ConvexSubgraphOperation(Generic[NodeT]):
         *,
         allow_zero_outputs: bool | None = None,
         connected_only: bool | None = None,
-        iteration_type: str = "linear-rev",
         ordering: Ordering = "toposort",
-        flags: int = 0xFF,
         sampling: bool | None = None,
     ) -> Iterator[set[NodeT]]:
         native_max_subgraph_size = self._native_max_subgraph_size()
@@ -467,8 +391,8 @@ class _ConvexSubgraphOperation(Generic[NodeT]):
                     self.max_num_inputs,
                     self.max_num_outputs,
                     native_max_subgraph_size,
-                    iteration_type=iteration_type,
-                    flags=flags,
+                    iteration_type=self.iteration_type,
+                    flags=self.flags,
                 )
                 if not result.subgraphs:
                     continue
@@ -501,8 +425,8 @@ class _ConvexSubgraphOperation(Generic[NodeT]):
             self.max_num_inputs,
             self.max_num_outputs,
             native_max_subgraph_size,
-            iteration_type=iteration_type,
-            flags=flags,
+            iteration_type=self.iteration_type,
+            flags=self.flags,
         )
         return ({node_order[index] for index in subgraph} for subgraph in result.subgraphs)
 
@@ -513,7 +437,6 @@ class _ConvexSubgraphOperation(Generic[NodeT]):
         connected_only: bool | None = None,
         ordering: Ordering | None = None,
         sampling: bool | None = None,
-        max_queue_size: int = 128,
     ) -> Iterator[set[NodeT]]:
         native_max_subgraph_size = self._native_max_subgraph_size()
         allow_zero_outputs = (
@@ -570,7 +493,7 @@ class _ConvexSubgraphOperation(Generic[NodeT]):
                         allow_zero_outputs=allow_zero_outputs,
                         connected_only=connected_only,
                         ordering=ordering,
-                        max_queue_size=max_queue_size,
+                        max_queue_size=self.max_queue_size,
                     )
                 return
 
@@ -599,7 +522,7 @@ class _ConvexSubgraphOperation(Generic[NodeT]):
                 allow_zero_outputs=allow_zero_outputs,
                 connected_only=connected_only,
                 ordering=ordering,
-                max_queue_size=max_queue_size,
+                max_queue_size=self.max_queue_size,
             )
 
         def iter_sampled_results() -> Iterator[set[NodeT]]:

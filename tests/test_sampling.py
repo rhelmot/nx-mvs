@@ -13,6 +13,20 @@ from mvs import (
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+QUERY_CONFIG_KEYS = {
+    "max_subgraph_size",
+    "weighted",
+    "weight_attr",
+    "forbidden_attr",
+    "body_forbidden_attr",
+    "input_forbidden_attr",
+    "forbid_sources_and_sinks",
+    "connected_only",
+    "max_queue_size",
+    "iteration_type",
+    "flags",
+    "ordering",
+}
 
 
 def _sampling_query_kwargs(kwargs: dict[str, object]) -> dict[str, object]:
@@ -32,6 +46,21 @@ def _sampling_query_kwargs(kwargs: dict[str, object]) -> dict[str, object]:
     return {sampling_names.get(name, name): value for name, value in kwargs.items()}
 
 
+def _split_query_kwargs(kwargs: dict[str, object]) -> tuple[dict[str, object], dict[str, object]]:
+    query_kwargs = _sampling_query_kwargs(kwargs)
+    constructor_kwargs = {
+        name: value
+        for name, value in query_kwargs.items()
+        if name in QUERY_CONFIG_KEYS or name.startswith("sampling_")
+    }
+    method_kwargs = {
+        name: value
+        for name, value in query_kwargs.items()
+        if name not in constructor_kwargs
+    }
+    return constructor_kwargs, method_kwargs
+
+
 def enumerate_convex_subgraphs(
     graph: nx.DiGraph,
     max_num_inputs: int,
@@ -39,14 +68,13 @@ def enumerate_convex_subgraphs(
     **kwargs: object,
 ):
     sampling = kwargs.pop("sampling", None)
-    max_queue_size = kwargs.pop("max_queue_size", 128)
-    return ConvexSubgraphQuery().enumerate(
+    constructor_kwargs, method_kwargs = _split_query_kwargs(kwargs)
+    return ConvexSubgraphQuery(**constructor_kwargs).enumerate(
         graph,
         max_num_inputs=max_num_inputs,
         max_num_outputs=max_num_outputs,
-        **kwargs,
+        **method_kwargs,
         sampling=sampling,  # type: ignore[arg-type]
-        max_queue_size=max_queue_size,  # type: ignore[arg-type]
     )
 
 
@@ -55,22 +83,12 @@ def sample_zero_output_convex_subgraphs(
     max_num_inputs: int,
     **kwargs: object,
 ):
-    query_kwargs = _sampling_query_kwargs(kwargs)
-    return ConvexSubgraphQuery(
-        **{
-            name: value
-            for name, value in query_kwargs.items()
-            if name.startswith("sampling_")
-        }
-    ).sample(
+    constructor_kwargs, method_kwargs = _split_query_kwargs(kwargs)
+    return ConvexSubgraphQuery(**constructor_kwargs).sample(
         graph,
         max_num_inputs=max_num_inputs,
         max_num_outputs=0,
-        **{
-            name: value
-            for name, value in query_kwargs.items()
-            if not name.startswith("sampling_")
-        },
+        **method_kwargs,
     )
 
 
@@ -80,22 +98,12 @@ def sample_nonzero_output_convex_subgraphs(
     max_num_outputs: int,
     **kwargs: object,
 ):
-    query_kwargs = _sampling_query_kwargs(kwargs)
-    return ConvexSubgraphQuery(
-        **{
-            name: value
-            for name, value in query_kwargs.items()
-            if name.startswith("sampling_")
-        }
-    ).sample(
+    constructor_kwargs, method_kwargs = _split_query_kwargs(kwargs)
+    return ConvexSubgraphQuery(**constructor_kwargs).sample(
         graph,
         max_num_inputs=max_num_inputs,
         max_num_outputs=max_num_outputs,
-        **{
-            name: value
-            for name, value in query_kwargs.items()
-            if not name.startswith("sampling_")
-        },
+        **method_kwargs,
     )
 
 
@@ -106,11 +114,12 @@ def grow_zero_output_convex_subgraphs(
 ):
     oracle = kwargs.pop("oracle", None)
     initial_oracle_state = kwargs.pop("initial_oracle_state", None)
-    return ConvexSubgraphQuery().grow(
+    constructor_kwargs, method_kwargs = _split_query_kwargs(kwargs)
+    return ConvexSubgraphQuery(**constructor_kwargs).grow(
         graph,
         seed_nodes,
         max_num_outputs=0,
-        **kwargs,
+        **method_kwargs,
         oracle=oracle,  # type: ignore[arg-type]
         initial_oracle_state=initial_oracle_state,
     )
@@ -123,10 +132,11 @@ def grow_nonzero_output_convex_subgraphs(
 ):
     oracle = kwargs.pop("oracle", None)
     initial_oracle_state = kwargs.pop("initial_oracle_state", None)
-    return ConvexSubgraphQuery().grow(
+    constructor_kwargs, method_kwargs = _split_query_kwargs(kwargs)
+    return ConvexSubgraphQuery(**constructor_kwargs).grow(
         graph,
         seed_nodes,
-        **kwargs,
+        **method_kwargs,
         oracle=oracle,  # type: ignore[arg-type]
         initial_oracle_state=initial_oracle_state,
     )
