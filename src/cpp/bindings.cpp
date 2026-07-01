@@ -235,7 +235,8 @@ public:
                                int max_num_outputs,
                                int max_subgraph_size,
                                std::size_t max_queue_size,
-                               bool connected_only)
+                               bool connected_only,
+                               std::size_t max_work)
         : graph_(make_graph(input))
         , alternate_graph_(make_alternate_graph(input))
         , max_num_inputs_(max_num_inputs)
@@ -243,6 +244,7 @@ public:
         , max_subgraph_size_(max_subgraph_size)
         , max_queue_size_(max_queue_size)
         , connected_only_(connected_only)
+        , max_work_(max_work)
     {
         if (max_num_inputs_ < 0 || max_num_outputs_ < 0)
             throw nb::value_error("I/O limits must be non-negative");
@@ -298,6 +300,12 @@ public:
             worker_.join();
     }
 
+    bool hit_work_limit() const
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return work_limit_hit_;
+    }
+
 private:
     void push_result(std::vector<int> subgraph)
     {
@@ -316,6 +324,7 @@ private:
     {
         try {
             StderrSilencer silence;
+            bool work_limit_hit = false;
             vs_enumerate(
                 *graph_,
                 max_num_inputs_,
@@ -325,7 +334,15 @@ private:
                 [this](const IOSubgraph &subgraph) {
                     push_result(to_vector(subgraph.nodes()));
                 },
-                connected_only_);
+                connected_only_,
+                true,
+                false,
+                max_work_,
+                &work_limit_hit);
+            {
+                std::lock_guard<std::mutex> lock(mutex_);
+                work_limit_hit_ = work_limit_hit;
+            }
         } catch (const EnumerationStopped &) {
         } catch (...) {
             std::lock_guard<std::mutex> lock(mutex_);
@@ -346,13 +363,15 @@ private:
     int max_subgraph_size_;
     std::size_t max_queue_size_;
     bool connected_only_;
+    std::size_t max_work_;
     std::deque<std::vector<int>> queue_;
-    std::mutex mutex_;
+    mutable std::mutex mutex_;
     std::condition_variable cv_;
     std::thread worker_;
     std::exception_ptr worker_exception_;
     bool done_ = false;
     bool stop_requested_ = false;
+    bool work_limit_hit_ = false;
 };
 
 SolveResult solve_graph_input(const GraphInput &input,
@@ -666,7 +685,8 @@ std::shared_ptr<ExhaustiveSubgraphIterator> iter_all_graph_input(
     int max_num_outputs,
     int max_subgraph_size,
     std::size_t max_queue_size,
-    bool connected_only)
+    bool connected_only,
+    std::size_t max_work)
 {
     return std::make_shared<ExhaustiveSubgraphIterator>(
         input,
@@ -674,7 +694,8 @@ std::shared_ptr<ExhaustiveSubgraphIterator> iter_all_graph_input(
         max_num_outputs,
         max_subgraph_size,
         max_queue_size,
-        connected_only);
+        connected_only,
+        max_work);
 }
 
 }
@@ -704,7 +725,8 @@ NB_MODULE(_native, m)
     nb::class_<ExhaustiveSubgraphIterator>(m, "ExhaustiveSubgraphIterator")
         .def("__iter__", &ExhaustiveSubgraphIterator::iter, nb::rv_policy::reference_internal)
         .def("__next__", &ExhaustiveSubgraphIterator::next)
-        .def("close", &ExhaustiveSubgraphIterator::close);
+        .def("close", &ExhaustiveSubgraphIterator::close)
+        .def("hit_work_limit", &ExhaustiveSubgraphIterator::hit_work_limit);
 
     m.def(
         "solve_graph_input",
@@ -731,7 +753,8 @@ NB_MODULE(_native, m)
         nb::arg("max_num_outputs"),
         nb::arg("max_subgraph_size") = -1,
         nb::arg("max_queue_size") = 128,
-        nb::arg("connected_only") = false);
+        nb::arg("connected_only") = false,
+        nb::arg("max_work") = 0);
     m.def(
         "sample_zero_output_graph_input",
         &sample_zero_output_graph_input,

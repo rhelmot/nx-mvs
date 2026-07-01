@@ -22,6 +22,11 @@ NodeT = TypeVar("NodeT", bound=Hashable)
 Ordering = Literal["default", "sort", "toposort"]
 
 _AUTO_SAMPLING_RESULT_THRESHOLD = 10_000
+_AUTO_EXHAUSTIVE_WORK_THRESHOLD = 4_096
+
+
+class _ExhaustiveWorkLimitReached(Exception):
+    pass
 
 
 @dataclass(frozen=True, slots=True)
@@ -450,7 +455,10 @@ class _ConvexSubgraphOperation(Generic[NodeT]):
         ordering = self.ordering if ordering is None else ordering
         sampling = _validate_sampling(sampling)
 
-        def iter_exhaustive_results() -> Iterator[set[NodeT]]:
+        def iter_exhaustive_results(
+            max_work: int | None = None,
+        ) -> Iterator[set[NodeT]]:
+            native_max_work = 0 if max_work is None else max_work
             if connected_only:
                 for component_nodes in _connected_component_node_sets(
                     self.graph,
@@ -494,6 +502,7 @@ class _ConvexSubgraphOperation(Generic[NodeT]):
                         connected_only=connected_only,
                         ordering=ordering,
                         max_queue_size=self.max_queue_size,
+                        max_work=native_max_work,
                     )
                 return
 
@@ -523,6 +532,7 @@ class _ConvexSubgraphOperation(Generic[NodeT]):
                 connected_only=connected_only,
                 ordering=ordering,
                 max_queue_size=self.max_queue_size,
+                max_work=native_max_work,
             )
 
         def iter_sampled_results() -> Iterator[set[NodeT]]:
@@ -540,6 +550,11 @@ class _ConvexSubgraphOperation(Generic[NodeT]):
             iter_exhaustive_results,
             iter_sampled_results,
             threshold=_AUTO_SAMPLING_RESULT_THRESHOLD,
+            work_limit=(
+                _AUTO_EXHAUSTIVE_WORK_THRESHOLD
+                if connected_only and self.max_num_outputs == 0
+                else 0
+            ),
         )
 
     def _sample_zero_output(self) -> Iterator[set[NodeT]]:
@@ -1170,17 +1185,18 @@ def graph_to_input(
 
 
 def _iter_exact_then_sampled(
-    exact_factory: Callable[[], Iterator[set[NodeT]]],
+    exact_factory: Callable[[int | None], Iterator[set[NodeT]]],
     sampled_factory: Callable[[], Iterator[set[NodeT]]],
     *,
     threshold: int,
+    work_limit: int = 0,
 ) -> Iterator[set[NodeT]]:
     if threshold <= 0:
         yield from sampled_factory()
         return
 
     buffered: list[set[NodeT]] = []
-    exact_iter = exact_factory()
+    exact_iter = exact_factory(work_limit if work_limit > 0 else None)
     use_sampled = False
     try:
         for subgraph in exact_iter:
@@ -1189,6 +1205,9 @@ def _iter_exact_then_sampled(
                 buffered.clear()
                 use_sampled = True
                 break
+    except _ExhaustiveWorkLimitReached:
+        buffered.clear()
+        use_sampled = True
     finally:
         close = getattr(exact_iter, "close", None)
         if close is not None:
@@ -1216,26 +1235,34 @@ def _iter_convex_subgraphs(
     connected_only: bool,
     ordering: Ordering,
     max_queue_size: int,
+    max_work: int = 0,
 ) -> Iterator[set[NodeT]]:
     seen: set[tuple[int, ...]] = set()
     require_positive_outputs = not allow_zero_outputs and max_num_outputs > 0
 
-    for subgraph in iter_all_graph_input(
+    iterator = iter_all_graph_input(
         payload,
         max_num_inputs,
         max_num_outputs,
         max_subgraph_size,
         max_queue_size=max_queue_size,
         connected_only=connected_only,
-    ):
-        subgraph_nodes = {node_order[index] for index in subgraph}
-        if require_positive_outputs and _num_outputs(graph, subgraph_nodes) == 0:
-            continue
-        key = tuple(subgraph)
-        if key in seen:
-            continue
-        seen.add(key)
-        yield subgraph_nodes
+        max_work=max_work,
+    )
+    try:
+        for subgraph in iterator:
+            subgraph_nodes = {node_order[index] for index in subgraph}
+            if require_positive_outputs and _num_outputs(graph, subgraph_nodes) == 0:
+                continue
+            key = tuple(subgraph)
+            if key in seen:
+                continue
+            seen.add(key)
+            yield subgraph_nodes
+    finally:
+        iterator.close()
+    if iterator.hit_work_limit():
+        raise _ExhaustiveWorkLimitReached
 
     if forbid_sources_and_sinks:
         for index, node in enumerate(node_order):
@@ -1263,19 +1290,26 @@ def _iter_convex_subgraphs(
             yield subgraph_nodes
 
     if allow_zero_outputs:
-        for subgraph in iter_all_graph_input(
+        iterator = iter_all_graph_input(
             payload,
             max_num_inputs,
             0,
             max_subgraph_size,
             max_queue_size=max_queue_size,
             connected_only=connected_only,
-        ):
-            key = tuple(subgraph)
-            if key in seen:
-                continue
-            seen.add(key)
-            yield {node_order[index] for index in subgraph}
+            max_work=max_work,
+        )
+        try:
+            for subgraph in iterator:
+                key = tuple(subgraph)
+                if key in seen:
+                    continue
+                seen.add(key)
+                yield {node_order[index] for index in subgraph}
+        finally:
+            iterator.close()
+        if iterator.hit_work_limit():
+            raise _ExhaustiveWorkLimitReached
 
 
 def _connected_component_node_sets(
