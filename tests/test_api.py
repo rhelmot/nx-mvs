@@ -304,6 +304,30 @@ class TestMVS(unittest.TestCase):
         }
         self.assertSetEqual({frozenset({"mid", "sink"})}, result)
 
+    def test_exhaustive_enumeration_with_opted_in_sink_successor_of_output(self) -> None:
+        graph = nx.DiGraph()
+        graph.add_edges_from(
+            [
+                ("output", "internal"),
+                ("output", "external"),
+                ("input", "internal"),
+                ("internal", "sink"),
+            ]
+        )
+
+        result = {
+            frozenset(nodes)
+            for nodes in enumerate_convex_subgraphs(
+                graph,
+                1,
+                1,
+                forbid_sources_and_sinks=False,
+                connected_only=True,
+                sampling=False,
+            )
+        }
+        self.assertIn(frozenset({"output", "internal", "sink"}), result)
+
     def test_maximum_enumeration_can_include_zero_outputs_when_enabled(self) -> None:
         graph = nx.DiGraph()
         graph.add_node("src", forbidden=True)
