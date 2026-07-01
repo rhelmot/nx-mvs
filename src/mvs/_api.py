@@ -1232,6 +1232,8 @@ def _iter_convex_subgraphs(
         if require_positive_outputs and _num_outputs(graph, subgraph_nodes) == 0:
             continue
         key = tuple(subgraph)
+        if key in seen:
+            continue
         seen.add(key)
         yield subgraph_nodes
 

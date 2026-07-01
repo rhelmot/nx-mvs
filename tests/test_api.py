@@ -1763,6 +1763,32 @@ class TestMVS(unittest.TestCase):
         self.assertIn(frozenset({"a"}), connected)
         self.assertIn(frozenset({"b"}), connected)
 
+    def test_connected_only_exhaustive_connects_through_inputs(self) -> None:
+        graph = nx.DiGraph()
+        graph.add_node("src", forbidden=True)
+        graph.add_edges_from(
+            [
+                ("src", "a"),
+                ("src", "b"),
+                ("a", "external"),
+            ]
+        )
+
+        connected = {
+            frozenset(nodes)
+            for nodes in enumerate_convex_subgraphs(
+                graph,
+                1,
+                1,
+                forbid_sources_and_sinks=False,
+                connected_only=True,
+                sampling=False,
+                **BODY_ONLY_FORBIDDEN,
+            )
+        }
+
+        self.assertIn(frozenset({"a", "b"}), connected)
+
     def test_connected_zero_output_respects_max_subgraph_size(self) -> None:
         graph = nx.DiGraph()
         graph.add_node("p", forbidden=True)
