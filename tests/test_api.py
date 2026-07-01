@@ -328,6 +328,33 @@ class TestMVS(unittest.TestCase):
         }
         self.assertIn(frozenset({"output", "internal", "sink"}), result)
 
+    def test_exhaustive_enumeration_with_output_reaching_forbidden_external_node(self) -> None:
+        graph = nx.DiGraph()
+        graph.add_node("forbidden", forbidden=True)
+        graph.add_edges_from(
+            [
+                ("input", "output"),
+                ("output", "internal"),
+                ("other", "internal"),
+                ("internal", "sink"),
+                ("output", "forbidden"),
+            ]
+        )
+
+        result = {
+            frozenset(nodes)
+            for nodes in enumerate_convex_subgraphs(
+                graph,
+                1,
+                1,
+                forbid_sources_and_sinks=False,
+                connected_only=True,
+                sampling=False,
+                **BODY_ONLY_FORBIDDEN,
+            )
+        }
+        self.assertIn(frozenset({"output", "other", "internal", "sink"}), result)
+
     def test_maximum_enumeration_can_include_zero_outputs_when_enabled(self) -> None:
         graph = nx.DiGraph()
         graph.add_node("src", forbidden=True)
