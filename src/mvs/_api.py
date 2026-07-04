@@ -552,7 +552,7 @@ class _ConvexSubgraphOperation(Generic[NodeT]):
             threshold=_AUTO_SAMPLING_RESULT_THRESHOLD,
             work_limit=(
                 _AUTO_EXHAUSTIVE_WORK_THRESHOLD
-                if connected_only and self.max_num_outputs == 0
+                if connected_only
                 else 0
             ),
         )
