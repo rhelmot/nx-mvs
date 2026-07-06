@@ -22,7 +22,7 @@ NodeT = TypeVar("NodeT", bound=Hashable)
 Ordering = Literal["default", "sort", "toposort"]
 
 _AUTO_SAMPLING_RESULT_THRESHOLD = 10_000
-_AUTO_EXHAUSTIVE_WORK_THRESHOLD = 4_096
+_AUTO_EXHAUSTIVE_WORK_THRESHOLD = 65_536
 
 
 class _ExhaustiveWorkLimitReached(Exception):
