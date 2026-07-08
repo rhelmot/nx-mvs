@@ -23,6 +23,8 @@ Ordering = Literal["default", "sort", "toposort"]
 
 _AUTO_SAMPLING_RESULT_THRESHOLD = 10_000
 _AUTO_EXHAUSTIVE_WORK_THRESHOLD = 65_536
+_AUTO_ALTERNATE_ONLY_EXHAUSTIVE_WORK_THRESHOLD = 4_096
+_AUTO_ALTERNATE_ONLY_SMALL_GRAPH_NODES = 512
 
 
 class _ExhaustiveWorkLimitReached(Exception):
@@ -39,6 +41,7 @@ class ConvexSubgraphQuery(Generic[NodeT]):
     input_forbidden_attr: str | None = None
     forbid_sources_and_sinks: bool = True
     connected_only: bool = False
+    alternate_connected_only: bool = False
     max_queue_size: int = 128
     iteration_type: str = "linear-rev"
     flags: int = 0xFF
@@ -157,6 +160,7 @@ class ConvexSubgraphQuery(Generic[NodeT]):
             forbid_sources_and_sinks=self.forbid_sources_and_sinks,
             allow_zero_outputs=allow_zero_outputs,
             connected_only=self.connected_only,
+            alternate_connected_only=self.alternate_connected_only,
             max_queue_size=self.max_queue_size,
             iteration_type=self.iteration_type,
             flags=self.flags,
@@ -190,6 +194,7 @@ class _ConvexSubgraphOperation(Generic[NodeT]):
     forbid_sources_and_sinks: bool = True
     allow_zero_outputs: bool = False
     connected_only: bool = False
+    alternate_connected_only: bool = False
     max_queue_size: int = 128
     iteration_type: str = "linear-rev"
     flags: int = 0xFF
@@ -212,10 +217,12 @@ class _ConvexSubgraphOperation(Generic[NodeT]):
         sampling: bool | None = None,
         allow_zero_outputs: bool | None = None,
         connected_only: bool | None = None,
+        alternate_connected_only: bool | None = None,
     ) -> Iterator[set[NodeT]]:
         return self._enumerate_convex_subgraphs(
             allow_zero_outputs=allow_zero_outputs,
             connected_only=connected_only,
+            alternate_connected_only=alternate_connected_only,
             ordering=self.ordering,
             sampling=sampling,
         )
@@ -255,10 +262,12 @@ class _ConvexSubgraphOperation(Generic[NodeT]):
         sampling: bool | None = None,
         allow_zero_outputs: bool | None = None,
         connected_only: bool | None = None,
+        alternate_connected_only: bool | None = None,
     ) -> Iterator[set[NodeT]]:
         return self._enumerate_maximum_convex_subgraphs(
             allow_zero_outputs=allow_zero_outputs,
             connected_only=connected_only,
+            alternate_connected_only=alternate_connected_only,
             ordering=self.ordering,
             sampling=sampling,
         )
@@ -308,11 +317,39 @@ class _ConvexSubgraphOperation(Generic[NodeT]):
         if self.sampling_exact_kernel_size < 0:
             raise ValueError("sampling_exact_kernel_size must be non-negative")
 
+    def _validate_alternate_connected_only(
+        self,
+        alternate_connected_only: bool,
+    ) -> None:
+        if alternate_connected_only and self.alternate_graph is None:
+            raise ValueError(
+                "alternate_connected_only requires alternate_graph"
+            )
+
+    def _auto_exhaustive_work_limit(
+        self,
+        *,
+        connected_only: bool,
+        alternate_connected_only: bool,
+    ) -> int:
+        if connected_only:
+            return _AUTO_EXHAUSTIVE_WORK_THRESHOLD
+        if not alternate_connected_only:
+            return 0
+
+        node_count = self.graph.number_of_nodes()
+        if self.alternate_graph is not None:
+            node_count = max(node_count, self.alternate_graph.number_of_nodes())
+        if node_count <= _AUTO_ALTERNATE_ONLY_SMALL_GRAPH_NODES:
+            return _AUTO_EXHAUSTIVE_WORK_THRESHOLD
+        return _AUTO_ALTERNATE_ONLY_EXHAUSTIVE_WORK_THRESHOLD
+
     def _enumerate_maximum_convex_subgraphs(
         self,
         *,
         allow_zero_outputs: bool | None = None,
         connected_only: bool | None = None,
+        alternate_connected_only: bool | None = None,
         ordering: Ordering = "toposort",
         sampling: bool | None = None,
     ) -> Iterator[set[NodeT]]:
@@ -326,11 +363,18 @@ class _ConvexSubgraphOperation(Generic[NodeT]):
         connected_only = (
             self.connected_only if connected_only is None else connected_only
         )
+        alternate_connected_only = (
+            self.alternate_connected_only
+            if alternate_connected_only is None
+            else alternate_connected_only
+        )
+        self._validate_alternate_connected_only(alternate_connected_only)
 
         if sampling is True:
             return self._iter_sampled_maximum_convex_subgraphs(
                 allow_zero_outputs=allow_zero_outputs,
                 connected_only=connected_only,
+                alternate_connected_only=alternate_connected_only,
                 ordering=ordering,
             )
 
@@ -340,6 +384,7 @@ class _ConvexSubgraphOperation(Generic[NodeT]):
             for subgraph in self._enumerate_convex_subgraphs(
                 allow_zero_outputs=allow_zero_outputs,
                 connected_only=connected_only,
+                alternate_connected_only=alternate_connected_only,
                 ordering=ordering,
                 sampling=sampling,
             ):
@@ -440,6 +485,7 @@ class _ConvexSubgraphOperation(Generic[NodeT]):
         *,
         allow_zero_outputs: bool | None = None,
         connected_only: bool | None = None,
+        alternate_connected_only: bool | None = None,
         ordering: Ordering | None = None,
         sampling: bool | None = None,
     ) -> Iterator[set[NodeT]]:
@@ -452,6 +498,12 @@ class _ConvexSubgraphOperation(Generic[NodeT]):
         connected_only = (
             self.connected_only if connected_only is None else connected_only
         )
+        alternate_connected_only = (
+            self.alternate_connected_only
+            if alternate_connected_only is None
+            else alternate_connected_only
+        )
+        self._validate_alternate_connected_only(alternate_connected_only)
         ordering = self.ordering if ordering is None else ordering
         sampling = _validate_sampling(sampling)
 
@@ -459,7 +511,7 @@ class _ConvexSubgraphOperation(Generic[NodeT]):
             max_work: int | None = None,
         ) -> Iterator[set[NodeT]]:
             native_max_work = 0 if max_work is None else max_work
-            if connected_only:
+            if connected_only or alternate_connected_only:
                 for component_nodes in _connected_component_node_sets(
                     self.graph,
                     self.alternate_graph,
@@ -489,6 +541,7 @@ class _ConvexSubgraphOperation(Generic[NodeT]):
                     )
                     yield from _iter_convex_subgraphs(
                         component,
+                        component_alternate,
                         payload,
                         node_order,
                         max_num_inputs=self.max_num_inputs,
@@ -500,6 +553,7 @@ class _ConvexSubgraphOperation(Generic[NodeT]):
                         forbid_sources_and_sinks=self.forbid_sources_and_sinks,
                         allow_zero_outputs=allow_zero_outputs,
                         connected_only=connected_only,
+                        alternate_connected_only=alternate_connected_only,
                         ordering=ordering,
                         max_queue_size=self.max_queue_size,
                         max_work=native_max_work,
@@ -519,6 +573,7 @@ class _ConvexSubgraphOperation(Generic[NodeT]):
             )
             yield from _iter_convex_subgraphs(
                 self.graph,
+                self.alternate_graph,
                 payload,
                 node_order,
                 max_num_inputs=self.max_num_inputs,
@@ -530,6 +585,7 @@ class _ConvexSubgraphOperation(Generic[NodeT]):
                 forbid_sources_and_sinks=self.forbid_sources_and_sinks,
                 allow_zero_outputs=allow_zero_outputs,
                 connected_only=connected_only,
+                alternate_connected_only=alternate_connected_only,
                 ordering=ordering,
                 max_queue_size=self.max_queue_size,
                 max_work=native_max_work,
@@ -539,6 +595,7 @@ class _ConvexSubgraphOperation(Generic[NodeT]):
             yield from self._iter_sampled_convex_subgraphs(
                 allow_zero_outputs=allow_zero_outputs,
                 connected_only=connected_only,
+                alternate_connected_only=alternate_connected_only,
                 ordering=ordering,
             )
 
@@ -550,10 +607,9 @@ class _ConvexSubgraphOperation(Generic[NodeT]):
             iter_exhaustive_results,
             iter_sampled_results,
             threshold=_AUTO_SAMPLING_RESULT_THRESHOLD,
-            work_limit=(
-                _AUTO_EXHAUSTIVE_WORK_THRESHOLD
-                if connected_only
-                else 0
+            work_limit=self._auto_exhaustive_work_limit(
+                connected_only=connected_only,
+                alternate_connected_only=alternate_connected_only,
             ),
         )
 
@@ -848,6 +904,7 @@ class _ConvexSubgraphOperation(Generic[NodeT]):
         initial_oracle_state: object | None = None,
     ) -> Iterator[set[NodeT]]:
         native_max_subgraph_size = self._native_max_subgraph_size()
+        self._validate_alternate_connected_only(self.alternate_connected_only)
         payload, node_order = graph_to_input(
             self.graph,
             alternate_graph=self.alternate_graph,
@@ -880,7 +937,18 @@ class _ConvexSubgraphOperation(Generic[NodeT]):
             oracle_indices if oracle is not None else None,
             initial_oracle_state,
         )
-        return ({node_order[index] for index in subgraph} for subgraph in result.subgraphs)
+        return (
+            nodes
+            for nodes in (
+                {node_order[index] for index in subgraph}
+                for subgraph in result.subgraphs
+            )
+            if _passes_alternate_connectivity(
+                self.alternate_graph,
+                nodes,
+                alternate_connected_only=self.alternate_connected_only,
+            )
+        )
 
     def _grow_nonzero_output(
         self,
@@ -890,6 +958,7 @@ class _ConvexSubgraphOperation(Generic[NodeT]):
         initial_oracle_state: object | None = None,
     ) -> Iterator[set[NodeT]]:
         native_max_subgraph_size = self._native_max_subgraph_size()
+        self._validate_alternate_connected_only(self.alternate_connected_only)
         if self.max_num_outputs <= 0:
             raise ValueError("max_num_outputs must be positive")
 
@@ -926,13 +995,25 @@ class _ConvexSubgraphOperation(Generic[NodeT]):
             oracle_indices if oracle is not None else None,
             initial_oracle_state,
         )
-        return ({node_order[index] for index in subgraph} for subgraph in result.subgraphs)
+        return (
+            nodes
+            for nodes in (
+                {node_order[index] for index in subgraph}
+                for subgraph in result.subgraphs
+            )
+            if _passes_alternate_connectivity(
+                self.alternate_graph,
+                nodes,
+                alternate_connected_only=self.alternate_connected_only,
+            )
+        )
 
     def _iter_sampled_convex_subgraphs(
         self,
         *,
         allow_zero_outputs: bool | None = None,
         connected_only: bool | None = None,
+        alternate_connected_only: bool | None = None,
         ordering: Ordering | None = None,
     ) -> Iterator[set[NodeT]]:
         allow_zero_outputs = (
@@ -943,6 +1024,12 @@ class _ConvexSubgraphOperation(Generic[NodeT]):
         connected_only = (
             self.connected_only if connected_only is None else connected_only
         )
+        alternate_connected_only = (
+            self.alternate_connected_only
+            if alternate_connected_only is None
+            else alternate_connected_only
+        )
+        self._validate_alternate_connected_only(alternate_connected_only)
         ordering = self.ordering if ordering is None else ordering
 
         if self.max_num_inputs < 0 or self.max_num_outputs < 0:
@@ -952,6 +1039,12 @@ class _ConvexSubgraphOperation(Generic[NodeT]):
 
         if self.max_num_outputs > 0:
             for subgraph in self._sample_nonzero_output():
+                if not _passes_alternate_connectivity(
+                    self.alternate_graph,
+                    subgraph,
+                    alternate_connected_only=alternate_connected_only,
+                ):
+                    continue
                 key = frozenset(subgraph)
                 if key in seen:
                     continue
@@ -960,6 +1053,12 @@ class _ConvexSubgraphOperation(Generic[NodeT]):
 
         if self.max_num_outputs == 0 or allow_zero_outputs:
             for subgraph in replace(self, max_num_outputs=0)._sample_zero_output():
+                if not _passes_alternate_connectivity(
+                    self.alternate_graph,
+                    subgraph,
+                    alternate_connected_only=alternate_connected_only,
+                ):
+                    continue
                 key = frozenset(subgraph)
                 if key in seen:
                     continue
@@ -971,6 +1070,7 @@ class _ConvexSubgraphOperation(Generic[NodeT]):
         *,
         allow_zero_outputs: bool | None = None,
         connected_only: bool | None = None,
+        alternate_connected_only: bool | None = None,
         ordering: Ordering | None = None,
     ) -> Iterator[set[NodeT]]:
         best_weight = float("-inf")
@@ -978,6 +1078,7 @@ class _ConvexSubgraphOperation(Generic[NodeT]):
         for subgraph in self._iter_sampled_convex_subgraphs(
             allow_zero_outputs=allow_zero_outputs,
             connected_only=connected_only,
+            alternate_connected_only=alternate_connected_only,
             ordering=ordering,
         ):
             weight = _subgraph_weight(
@@ -1034,6 +1135,55 @@ def _num_outputs(
         for node in subgraph
         if any(successor not in subgraph for successor in graph.successors(node))
     )
+
+
+def _is_connected_with_inputs(
+    graph: nx.DiGraph[NodeT],
+    subgraph: set[NodeT],
+) -> bool:
+    inputs = {
+        predecessor
+        for node in subgraph
+        if node in graph
+        for predecessor in graph.predecessors(node)
+        if predecessor not in subgraph
+    }
+    augmented = set(subgraph) | inputs
+    if not augmented:
+        return True
+
+    start = next(iter(augmented))
+    visited = {start}
+    stack = [start]
+    while stack:
+        node = stack.pop()
+        neighbors: Iterator[NodeT]
+        if node in graph:
+            neighbors = iter(
+                tuple(graph.predecessors(node)) + tuple(graph.successors(node))
+            )
+        else:
+            neighbors = iter(())
+        for neighbor in neighbors:
+            if neighbor not in augmented or neighbor in visited:
+                continue
+            if node in inputs and neighbor in inputs:
+                continue
+            visited.add(neighbor)
+            stack.append(neighbor)
+    return len(visited) == len(augmented)
+
+
+def _passes_alternate_connectivity(
+    alternate_graph: nx.DiGraph[NodeT] | None,
+    subgraph: set[NodeT],
+    *,
+    alternate_connected_only: bool,
+) -> bool:
+    if not alternate_connected_only:
+        return True
+    assert alternate_graph is not None
+    return _is_connected_with_inputs(alternate_graph, subgraph)
 
 
 def graph_to_input(
@@ -1221,6 +1371,7 @@ def _iter_exact_then_sampled(
 
 def _iter_convex_subgraphs(
     graph: nx.DiGraph[NodeT],
+    alternate_graph: nx.DiGraph[NodeT] | None,
     payload: GraphInput,
     node_order: tuple[NodeT, ...],
     *,
@@ -1233,6 +1384,7 @@ def _iter_convex_subgraphs(
     forbid_sources_and_sinks: bool,
     allow_zero_outputs: bool,
     connected_only: bool,
+    alternate_connected_only: bool,
     ordering: Ordering,
     max_queue_size: int,
     max_work: int = 0,
@@ -1253,6 +1405,12 @@ def _iter_convex_subgraphs(
         for subgraph in iterator:
             subgraph_nodes = {node_order[index] for index in subgraph}
             if require_positive_outputs and _num_outputs(graph, subgraph_nodes) == 0:
+                continue
+            if not _passes_alternate_connectivity(
+                alternate_graph,
+                subgraph_nodes,
+                alternate_connected_only=alternate_connected_only,
+            ):
                 continue
             key = tuple(subgraph)
             if key in seen:
@@ -1286,6 +1444,12 @@ def _iter_convex_subgraphs(
             num_inputs = sum(1 for predecessor in graph.predecessors(node))
             if num_inputs > max_num_inputs:
                 continue
+            if not _passes_alternate_connectivity(
+                alternate_graph,
+                subgraph_nodes,
+                alternate_connected_only=alternate_connected_only,
+            ):
+                continue
             seen.add(key)
             yield subgraph_nodes
 
@@ -1304,8 +1468,15 @@ def _iter_convex_subgraphs(
                 key = tuple(subgraph)
                 if key in seen:
                     continue
+                subgraph_nodes = {node_order[index] for index in subgraph}
+                if not _passes_alternate_connectivity(
+                    alternate_graph,
+                    subgraph_nodes,
+                    alternate_connected_only=alternate_connected_only,
+                ):
+                    continue
                 seen.add(key)
-                yield {node_order[index] for index in subgraph}
+                yield subgraph_nodes
         finally:
             iterator.close()
         if iterator.hit_work_limit():

@@ -22,6 +22,7 @@ QUERY_CONFIG_KEYS = {
     "input_forbidden_attr",
     "forbid_sources_and_sinks",
     "connected_only",
+    "alternate_connected_only",
     "max_queue_size",
     "iteration_type",
     "flags",

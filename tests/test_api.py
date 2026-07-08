@@ -27,6 +27,7 @@ QUERY_CONFIG_KEYS = {
     "input_forbidden_attr",
     "forbid_sources_and_sinks",
     "connected_only",
+    "alternate_connected_only",
     "max_queue_size",
     "iteration_type",
     "flags",
@@ -1061,6 +1062,130 @@ class TestMVS(unittest.TestCase):
 
         self.assertIn(frozenset({"b", "c"}), unconstrained)
         self.assertNotIn(frozenset({"b", "c"}), connected)
+
+    def test_alternate_connected_only_filters_independently(self) -> None:
+        graph = nx.DiGraph()
+        graph.add_edges_from([("a", "b")])
+
+        alternate_graph = nx.DiGraph()
+        alternate_graph.add_nodes_from(["a", "b"])
+
+        primary_connected = {
+            frozenset(nodes)
+            for nodes in enumerate_convex_subgraphs(
+                graph,
+                0,
+                0,
+                alternate_graph=alternate_graph,
+                forbid_sources_and_sinks=False,
+                connected_only=True,
+                sampling=False,
+            )
+        }
+        alternate_connected = {
+            frozenset(nodes)
+            for nodes in enumerate_convex_subgraphs(
+                graph,
+                0,
+                0,
+                alternate_graph=alternate_graph,
+                forbid_sources_and_sinks=False,
+                connected_only=True,
+                alternate_connected_only=True,
+                sampling=False,
+            )
+        }
+
+        self.assertIn(frozenset({"a", "b"}), primary_connected)
+        self.assertNotIn(frozenset({"a", "b"}), alternate_connected)
+
+    def test_alternate_connected_only_uses_unbounded_alternate_inputs(self) -> None:
+        graph = nx.DiGraph()
+        graph.add_edges_from([("a", "b")])
+
+        alternate_graph = nx.DiGraph()
+        alternate_graph.add_node("x", forbidden=True)
+        alternate_graph.add_edges_from(
+            [
+                ("x", "a"),
+                ("x", "b"),
+            ]
+        )
+
+        alternate_connected = {
+            frozenset(nodes)
+            for nodes in enumerate_convex_subgraphs(
+                graph,
+                0,
+                0,
+                alternate_graph=alternate_graph,
+                forbid_sources_and_sinks=False,
+                alternate_connected_only=True,
+                sampling=False,
+                **BODY_ONLY_FORBIDDEN,
+            )
+        }
+
+        self.assertIn(frozenset({"a", "b"}), alternate_connected)
+
+    def test_alternate_connected_only_does_not_require_primary_connectivity(self) -> None:
+        graph = nx.DiGraph()
+        graph.add_nodes_from(["a", "b"])
+
+        alternate_graph = nx.DiGraph()
+        alternate_graph.add_node("x", forbidden=True)
+        alternate_graph.add_edges_from(
+            [
+                ("x", "a"),
+                ("x", "b"),
+            ]
+        )
+
+        alternate_connected = {
+            frozenset(nodes)
+            for nodes in enumerate_convex_subgraphs(
+                graph,
+                0,
+                0,
+                alternate_graph=alternate_graph,
+                forbid_sources_and_sinks=False,
+                alternate_connected_only=True,
+                sampling=False,
+                **BODY_ONLY_FORBIDDEN,
+            )
+        }
+        primary_connected = {
+            frozenset(nodes)
+            for nodes in enumerate_convex_subgraphs(
+                graph,
+                0,
+                0,
+                alternate_graph=alternate_graph,
+                forbid_sources_and_sinks=False,
+                connected_only=True,
+                sampling=False,
+                **BODY_ONLY_FORBIDDEN,
+            )
+        }
+
+        self.assertIn(frozenset({"a", "b"}), alternate_connected)
+        self.assertNotIn(frozenset({"a", "b"}), primary_connected)
+
+    def test_alternate_connected_only_requires_alternate_graph(self) -> None:
+        graph = nx.DiGraph()
+        graph.add_edges_from([("a", "b")])
+
+        with self.assertRaisesRegex(ValueError, "alternate_connected_only"):
+            list(
+                enumerate_convex_subgraphs(
+                    graph,
+                    0,
+                    0,
+                    forbid_sources_and_sinks=False,
+                    alternate_connected_only=True,
+                    sampling=False,
+                )
+            )
 
     def test_alternate_graph_filters_zero_output_results(self) -> None:
         graph = nx.DiGraph()
