@@ -1171,6 +1171,40 @@ class TestMVS(unittest.TestCase):
         self.assertIn(frozenset({"a", "b"}), alternate_connected)
         self.assertNotIn(frozenset({"a", "b"}), primary_connected)
 
+    def test_alternate_connected_only_completes_successors_of_primary_output(
+        self,
+    ) -> None:
+        graph = nx.DiGraph()
+        graph.add_node("x", body_forbidden=True, input_forbidden=True)
+        graph.add_edges_from(
+            [
+                ("a", "b"),
+                ("a", "c"),
+                ("a", "x"),
+                ("d", "e"),
+                ("e", "c"),
+            ]
+        )
+        alternate_graph = graph.copy()
+
+        result = {
+            frozenset(nodes)
+            for nodes in enumerate_convex_subgraphs(
+                graph,
+                0,
+                1,
+                alternate_graph=alternate_graph,
+                forbid_sources_and_sinks=False,
+                alternate_connected_only=True,
+                sampling=False,
+                forbidden_attr=None,
+                body_forbidden_attr="body_forbidden",
+                input_forbidden_attr="input_forbidden",
+            )
+        }
+
+        self.assertIn(frozenset({"a", "b", "c", "d", "e"}), result)
+
     def test_alternate_connected_only_requires_alternate_graph(self) -> None:
         graph = nx.DiGraph()
         graph.add_edges_from([("a", "b")])

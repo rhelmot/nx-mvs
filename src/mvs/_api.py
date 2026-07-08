@@ -1186,6 +1186,143 @@ def _passes_alternate_connectivity(
     return _is_connected_with_inputs(alternate_graph, subgraph)
 
 
+def _closure_in_graph(
+    graph: nx.DiGraph[NodeT],
+    subgraph: set[NodeT],
+) -> set[NodeT]:
+    predecessors: set[NodeT] = set()
+    successors: set[NodeT] = set()
+    for node in subgraph:
+        if node not in graph:
+            continue
+        predecessors.update(nx.ancestors(graph, node))
+        successors.update(nx.descendants(graph, node))
+    return set(subgraph) | (predecessors & successors)
+
+
+def _dual_closure(
+    graph: nx.DiGraph[NodeT],
+    alternate_graph: nx.DiGraph[NodeT] | None,
+    subgraph: set[NodeT],
+) -> set[NodeT]:
+    closed = set(subgraph)
+    while True:
+        next_closed = _closure_in_graph(graph, closed)
+        if alternate_graph is not None:
+            next_closed |= _closure_in_graph(alternate_graph, closed)
+        if next_closed == closed:
+            return closed
+        closed = next_closed
+
+
+def _is_valid_convex_candidate(
+    graph: nx.DiGraph[NodeT],
+    alternate_graph: nx.DiGraph[NodeT] | None,
+    payload: GraphInput,
+    node_order: tuple[NodeT, ...],
+    subgraph: set[NodeT],
+    *,
+    max_num_inputs: int,
+    max_num_outputs: int,
+    max_subgraph_size: int,
+    require_positive_outputs: bool,
+    alternate_connected_only: bool,
+) -> bool:
+    if any(node not in graph for node in subgraph):
+        return False
+    if max_subgraph_size >= 0 and len(subgraph) > max_subgraph_size:
+        return False
+
+    body_forbidden = {
+        node_order[index]
+        for index, forbidden in enumerate(payload.body_forbidden)
+        if forbidden
+    }
+    if subgraph & body_forbidden:
+        return False
+
+    inputs = {
+        predecessor
+        for node in subgraph
+        for predecessor in graph.predecessors(node)
+        if predecessor not in subgraph
+    }
+    if len(inputs) > max_num_inputs:
+        return False
+    input_forbidden = {
+        node_order[index]
+        for index, forbidden in enumerate(payload.input_forbidden)
+        if forbidden
+    }
+    if inputs & input_forbidden:
+        return False
+
+    num_outputs = _num_outputs(graph, subgraph)
+    if num_outputs > max_num_outputs:
+        return False
+    if require_positive_outputs and num_outputs == 0:
+        return False
+
+    if _dual_closure(graph, alternate_graph, subgraph) != subgraph:
+        return False
+    return _passes_alternate_connectivity(
+        alternate_graph,
+        subgraph,
+        alternate_connected_only=alternate_connected_only,
+    )
+
+
+def _iter_successor_expansions(
+    graph: nx.DiGraph[NodeT],
+    alternate_graph: nx.DiGraph[NodeT] | None,
+    payload: GraphInput,
+    node_order: tuple[NodeT, ...],
+    subgraph: set[NodeT],
+    *,
+    max_num_inputs: int,
+    max_num_outputs: int,
+    max_subgraph_size: int,
+    require_positive_outputs: bool,
+    alternate_connected_only: bool,
+) -> Iterator[set[NodeT]]:
+    seen = {frozenset(subgraph)}
+    stack = [set(subgraph)]
+    while stack:
+        current = stack.pop()
+        candidates = {
+            successor
+            for node in current
+            if node in graph
+            for successor in graph.successors(node)
+            if successor not in current
+        }
+        for candidate in candidates:
+            expanded = _dual_closure(
+                graph,
+                alternate_graph,
+                current | {candidate},
+            )
+            key = frozenset(expanded)
+            if key in seen:
+                continue
+            seen.add(key)
+            if not _is_valid_convex_candidate(
+                graph,
+                alternate_graph,
+                payload,
+                node_order,
+                expanded,
+                max_num_inputs=max_num_inputs,
+                max_num_outputs=max_num_outputs,
+                max_subgraph_size=max_subgraph_size,
+                require_positive_outputs=require_positive_outputs,
+                alternate_connected_only=alternate_connected_only,
+            ):
+                continue
+            yield expanded
+            stack.append(expanded)
+
+
 def graph_to_input(
     graph: nx.DiGraph[NodeT],
     *,
@@ -1389,8 +1526,34 @@ def _iter_convex_subgraphs(
     max_queue_size: int,
     max_work: int = 0,
 ) -> Iterator[set[NodeT]]:
-    seen: set[tuple[int, ...]] = set()
+    seen: set[frozenset[NodeT]] = set()
     require_positive_outputs = not allow_zero_outputs and max_num_outputs > 0
+
+    def emit_with_expansions(subgraph_nodes: set[NodeT]) -> Iterator[set[NodeT]]:
+        key = frozenset(subgraph_nodes)
+        if key in seen:
+            return
+        seen.add(key)
+        yield subgraph_nodes
+        if not alternate_connected_only or connected_only or max_work > 0:
+            return
+        for expanded in _iter_successor_expansions(
+            graph,
+            alternate_graph,
+            payload,
+            node_order,
+            subgraph_nodes,
+            max_num_inputs=max_num_inputs,
+            max_num_outputs=max_num_outputs,
+            max_subgraph_size=max_subgraph_size,
+            require_positive_outputs=require_positive_outputs,
+            alternate_connected_only=alternate_connected_only,
+        ):
+            expanded_key = frozenset(expanded)
+            if expanded_key in seen:
+                continue
+            seen.add(expanded_key)
+            yield expanded
 
     iterator = iter_all_graph_input(
         payload,
@@ -1412,11 +1575,7 @@ def _iter_convex_subgraphs(
                 alternate_connected_only=alternate_connected_only,
             ):
                 continue
-            key = tuple(subgraph)
-            if key in seen:
-                continue
-            seen.add(key)
-            yield subgraph_nodes
+            yield from emit_with_expansions(subgraph_nodes)
     finally:
         iterator.close()
     if iterator.hit_work_limit():
@@ -1428,7 +1587,7 @@ def _iter_convex_subgraphs(
                 continue
             if graph.in_degree(node) > 0 and graph.out_degree(node) > 0:
                 continue
-            key = (index,)
+            key = frozenset({node})
             if key in seen:
                 continue
             if max_subgraph_size >= 0 and max_subgraph_size < 1:
@@ -1450,8 +1609,7 @@ def _iter_convex_subgraphs(
                 alternate_connected_only=alternate_connected_only,
             ):
                 continue
-            seen.add(key)
-            yield subgraph_nodes
+            yield from emit_with_expansions(subgraph_nodes)
 
     if allow_zero_outputs:
         iterator = iter_all_graph_input(
@@ -1465,9 +1623,6 @@ def _iter_convex_subgraphs(
         )
         try:
             for subgraph in iterator:
-                key = tuple(subgraph)
-                if key in seen:
-                    continue
                 subgraph_nodes = {node_order[index] for index in subgraph}
                 if not _passes_alternate_connectivity(
                     alternate_graph,
@@ -1475,8 +1630,7 @@ def _iter_convex_subgraphs(
                     alternate_connected_only=alternate_connected_only,
                 ):
                     continue
-                seen.add(key)
-                yield subgraph_nodes
+                yield from emit_with_expansions(subgraph_nodes)
         finally:
             iterator.close()
         if iterator.hit_work_limit():
