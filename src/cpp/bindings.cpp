@@ -452,7 +452,8 @@ SolveResult sample_zero_output_graph_input(const GraphInput &input,
                                            int size_bin_width,
                                            int thicken_radius,
                                            bool bucket_by_num_inputs,
-                                           int minimal_node_bin_width)
+                                           int minimal_node_bin_width,
+                                           std::size_t max_work)
 {
     if (max_num_inputs < 0)
         throw nb::value_error("I/O limits must be non-negative");
@@ -491,7 +492,8 @@ SolveResult sample_zero_output_graph_input(const GraphInput &input,
         size_bin_width,
         thicken_radius,
         bucket_by_num_inputs,
-        minimal_node_bin_width);
+        minimal_node_bin_width,
+        max_work);
     return result;
 }
 
@@ -567,7 +569,8 @@ SolveResult sample_nonzero_output_graph_input(const GraphInput &input,
                                               bool bucket_by_num_inputs,
                                               bool bucket_by_num_outputs,
                                               int minimal_node_bin_width,
-                                              int boundary_pair_samples)
+                                              int boundary_pair_samples,
+                                              std::size_t max_work)
 {
     if (max_num_inputs < 0 || max_num_outputs <= 0)
         throw nb::value_error(
@@ -612,7 +615,8 @@ SolveResult sample_nonzero_output_graph_input(const GraphInput &input,
         bucket_by_num_inputs,
         bucket_by_num_outputs,
         minimal_node_bin_width,
-        boundary_pair_samples);
+        boundary_pair_samples,
+        max_work);
     return result;
 }
 
@@ -767,7 +771,8 @@ NB_MODULE(_native, m)
         nb::arg("size_bin_width") = 4,
         nb::arg("thicken_radius") = 1,
         nb::arg("bucket_by_num_inputs") = true,
-        nb::arg("minimal_node_bin_width") = 1);
+        nb::arg("minimal_node_bin_width") = 1,
+        nb::arg("max_work") = 0);
     m.def(
         "grow_zero_output_graph_input",
         &grow_zero_output_graph_input,
@@ -792,7 +797,8 @@ NB_MODULE(_native, m)
         nb::arg("bucket_by_num_inputs") = true,
         nb::arg("bucket_by_num_outputs") = true,
         nb::arg("minimal_node_bin_width") = 1,
-        nb::arg("boundary_pair_samples") = 512);
+        nb::arg("boundary_pair_samples") = 512,
+        nb::arg("max_work") = 0);
     m.def(
         "grow_nonzero_output_graph_input",
         &grow_nonzero_output_graph_input,

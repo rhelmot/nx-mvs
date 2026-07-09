@@ -57,6 +57,7 @@ class ConvexSubgraphQuery(Generic[NodeT]):
     sampling_boundary_pair_samples: int = 512
     sampling_passes: int = 1
     sampling_exact_kernel_size: int = 0
+    sampling_max_work: int = 50_000_000
 
     def enumerate(
         self,
@@ -176,6 +177,7 @@ class ConvexSubgraphQuery(Generic[NodeT]):
             sampling_boundary_pair_samples=self.sampling_boundary_pair_samples,
             sampling_passes=self.sampling_passes,
             sampling_exact_kernel_size=self.sampling_exact_kernel_size,
+            sampling_max_work=self.sampling_max_work,
         )
 
 
@@ -210,6 +212,7 @@ class _ConvexSubgraphOperation(Generic[NodeT]):
     sampling_boundary_pair_samples: int = 512
     sampling_passes: int = 1
     sampling_exact_kernel_size: int = 0
+    sampling_max_work: int = 50_000_000
 
     def enumerate(
         self,
@@ -316,6 +319,8 @@ class _ConvexSubgraphOperation(Generic[NodeT]):
             raise ValueError("sampling_passes must be positive")
         if self.sampling_exact_kernel_size < 0:
             raise ValueError("sampling_exact_kernel_size must be non-negative")
+        if self.sampling_max_work < 0:
+            raise ValueError("sampling_max_work must be non-negative")
 
     def _validate_alternate_connected_only(
         self,
@@ -730,6 +735,7 @@ class _ConvexSubgraphOperation(Generic[NodeT]):
                     thicken_radius=self.sampling_thicken_radius,
                     bucket_by_num_inputs=self.sampling_bucket_by_num_inputs,
                     minimal_node_bin_width=self.sampling_minimal_node_bin_width,
+                    max_work=self.sampling_max_work,
                 )
                 for subgraph in result.subgraphs:
                     nodes = {node_order[index] for index in subgraph}
@@ -876,6 +882,7 @@ class _ConvexSubgraphOperation(Generic[NodeT]):
                     bucket_by_num_outputs=self.sampling_bucket_by_num_outputs,
                     minimal_node_bin_width=self.sampling_minimal_node_bin_width,
                     boundary_pair_samples=pass_boundary_pair_samples,
+                    max_work=self.sampling_max_work,
                 )
                 for subgraph in result.subgraphs:
                     nodes = {node_order[index] for index in subgraph}
@@ -1424,8 +1431,9 @@ def graph_to_input(
                     if node not in graph_nodes
                 )
     node_index = {node: index for index, node in enumerate(node_order)}
+    alternate_only_nodes = alternate_nodes - graph_nodes
     body_forbidden_nodes = graph_body_forbidden | alternate_body_forbidden
-    input_forbidden_nodes = graph_input_forbidden | alternate_input_forbidden
+    input_forbidden_nodes = graph_input_forbidden | alternate_only_nodes
     forbidden_nodes = body_forbidden_nodes & input_forbidden_nodes
 
     def node_weight(node: NodeT) -> float:

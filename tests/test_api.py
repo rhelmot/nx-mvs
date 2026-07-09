@@ -45,6 +45,7 @@ SAMPLING_NAMES = {
     "boundary_pair_samples": "sampling_boundary_pair_samples",
     "sampling_passes": "sampling_passes",
     "exact_kernel_size": "sampling_exact_kernel_size",
+    "max_work": "sampling_max_work",
 }
 
 
@@ -1170,6 +1171,32 @@ class TestMVS(unittest.TestCase):
 
         self.assertIn(frozenset({"a", "b"}), alternate_connected)
         self.assertNotIn(frozenset({"a", "b"}), primary_connected)
+
+    def test_alternate_input_forbidden_does_not_restrict_primary_inputs(self) -> None:
+        graph = nx.DiGraph()
+        graph.add_edges_from([("i", "a")])
+
+        alternate_graph = nx.DiGraph()
+        alternate_graph.add_node("i", input_forbidden=True)
+        alternate_graph.add_node("a")
+        alternate_graph.add_edge("i", "a")
+
+        result = {
+            frozenset(nodes)
+            for nodes in enumerate_convex_subgraphs(
+                graph,
+                1,
+                0,
+                alternate_graph=alternate_graph,
+                forbid_sources_and_sinks=False,
+                allow_zero_outputs=True,
+                sampling=False,
+                forbidden_attr=None,
+                input_forbidden_attr="input_forbidden",
+            )
+        }
+
+        self.assertIn(frozenset({"a"}), result)
 
     def test_alternate_connected_only_completes_successors_of_primary_output(
         self,

@@ -43,6 +43,7 @@ def _sampling_query_kwargs(kwargs: dict[str, object]) -> dict[str, object]:
         "boundary_pair_samples": "sampling_boundary_pair_samples",
         "sampling_passes": "sampling_passes",
         "exact_kernel_size": "sampling_exact_kernel_size",
+        "max_work": "sampling_max_work",
     }
     return {sampling_names.get(name, name): value for name, value in kwargs.items()}
 
@@ -159,6 +160,7 @@ def _sample_sets(
     ordering: Literal["default", "sort", "toposort"] = "toposort",
     sampling_passes: int = 1,
     exact_kernel_size: int = 0,
+    max_work: int = 50_000_000,
     forbidden_attr: str | None = "forbidden",
     body_forbidden_attr: str | None = None,
     input_forbidden_attr: str | None = None,
@@ -181,6 +183,7 @@ def _sample_sets(
             ordering=ordering,
             sampling_passes=sampling_passes,
             exact_kernel_size=exact_kernel_size,
+            max_work=max_work,
             forbidden_attr=forbidden_attr,
             body_forbidden_attr=body_forbidden_attr,
             input_forbidden_attr=input_forbidden_attr,
@@ -390,6 +393,41 @@ def _build_validator(
 
 
 class TestSampling(unittest.TestCase):
+    def test_sampling_max_work_bounds_native_sampler_work(self) -> None:
+        graph = nx.DiGraph()
+        graph.add_node("p", forbidden=True)
+        graph.add_edges_from(
+            [
+                ("p", "a"),
+                ("p", "b"),
+                ("p", "c"),
+                ("p", "d"),
+                ("a", "e"),
+                ("b", "e"),
+                ("c", "f"),
+                ("d", "f"),
+            ]
+        )
+
+        bounded = _sample_sets(
+            graph,
+            max_states_expanded=100,
+            max_samples=100,
+            max_work=1,
+            forbidden_attr=None,
+            body_forbidden_attr="forbidden",
+        )
+        unbounded = _sample_sets(
+            graph,
+            max_states_expanded=100,
+            max_samples=100,
+            max_work=0,
+            forbidden_attr=None,
+            body_forbidden_attr="forbidden",
+        )
+
+        self.assertLess(len(bounded), len(unbounded))
+
     def test_thickening_improves_low_budget_launch_coverage(self) -> None:
         graph = nx.DiGraph()
         graph.add_node("p", forbidden=True)

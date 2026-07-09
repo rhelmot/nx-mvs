@@ -71,6 +71,7 @@ def sample_zero_output_graph_input(
     thicken_radius: int = 1,
     bucket_by_num_inputs: bool = True,
     minimal_node_bin_width: int = 1,
+    max_work: int = 0,
 ) -> SolveResult: ...
 
 
@@ -88,6 +89,7 @@ def sample_nonzero_output_graph_input(
     bucket_by_num_outputs: bool = True,
     minimal_node_bin_width: int = 1,
     boundary_pair_samples: int = 512,
+    max_work: int = 0,
 ) -> SolveResult: ...
 
 
