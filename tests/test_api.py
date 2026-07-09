@@ -1198,6 +1198,50 @@ class TestMVS(unittest.TestCase):
 
         self.assertIn(frozenset({"a"}), result)
 
+    def test_alternate_outputs_do_not_count_against_primary_output_limit(self) -> None:
+        graph = nx.DiGraph()
+        graph.add_nodes_from(["a", "b", "c", "i1", "i2", "out"])
+        graph.add_edges_from(
+            [
+                ("i1", "c"),
+                ("i2", "c"),
+                ("c", "out"),
+            ]
+        )
+
+        alternate_graph = nx.DiGraph()
+        alternate_graph.add_nodes_from(graph.nodes)
+        alternate_graph.add_node("ai", forbidden=True)
+        alternate_graph.add_node("ao1", forbidden=True)
+        alternate_graph.add_node("ao2", forbidden=True)
+        alternate_graph.add_node("ao3", forbidden=True)
+        alternate_graph.add_edges_from(
+            [
+                ("ai", "a"),
+                ("ai", "b"),
+                ("ai", "c"),
+                ("a", "ao1"),
+                ("b", "ao2"),
+                ("c", "ao3"),
+            ]
+        )
+
+        result = {
+            frozenset(nodes)
+            for nodes in enumerate_convex_subgraphs(
+                graph,
+                2,
+                1,
+                alternate_graph=alternate_graph,
+                forbid_sources_and_sinks=False,
+                alternate_connected_only=True,
+                sampling=False,
+                **BODY_ONLY_FORBIDDEN,
+            )
+        }
+
+        self.assertIn(frozenset({"a", "b", "c"}), result)
+
     def test_alternate_connected_only_completes_successors_of_primary_output(
         self,
     ) -> None:

@@ -1279,57 +1279,6 @@ def _is_valid_convex_candidate(
     )
 
 
-def _iter_successor_expansions(
-    graph: nx.DiGraph[NodeT],
-    alternate_graph: nx.DiGraph[NodeT] | None,
-    payload: GraphInput,
-    node_order: tuple[NodeT, ...],
-    subgraph: set[NodeT],
-    *,
-    max_num_inputs: int,
-    max_num_outputs: int,
-    max_subgraph_size: int,
-    require_positive_outputs: bool,
-    alternate_connected_only: bool,
-) -> Iterator[set[NodeT]]:
-    seen = {frozenset(subgraph)}
-    stack = [set(subgraph)]
-    while stack:
-        current = stack.pop()
-        candidates = {
-            successor
-            for node in current
-            if node in graph
-            for successor in graph.successors(node)
-            if successor not in current
-        }
-        for candidate in candidates:
-            expanded = _dual_closure(
-                graph,
-                alternate_graph,
-                current | {candidate},
-            )
-            key = frozenset(expanded)
-            if key in seen:
-                continue
-            seen.add(key)
-            if not _is_valid_convex_candidate(
-                graph,
-                alternate_graph,
-                payload,
-                node_order,
-                expanded,
-                max_num_inputs=max_num_inputs,
-                max_num_outputs=max_num_outputs,
-                max_subgraph_size=max_subgraph_size,
-                require_positive_outputs=require_positive_outputs,
-                alternate_connected_only=alternate_connected_only,
-            ):
-                continue
-            yield expanded
-            stack.append(expanded)
-
-
 def graph_to_input(
     graph: nx.DiGraph[NodeT],
     *,
@@ -1501,7 +1450,6 @@ def _iter_exact_then_sampled(
                 use_sampled = True
                 break
     except _ExhaustiveWorkLimitReached:
-        buffered.clear()
         use_sampled = True
     finally:
         close = getattr(exact_iter, "close", None)
@@ -1509,7 +1457,16 @@ def _iter_exact_then_sampled(
             close()
 
     if use_sampled:
-        yield from sampled_factory()
+        seen = set()
+        for subgraph in buffered:
+            seen.add(frozenset(subgraph))
+            yield subgraph
+        for subgraph in sampled_factory():
+            key = frozenset(subgraph)
+            if key in seen:
+                continue
+            seen.add(key)
+            yield subgraph
     else:
         yield from buffered
 
@@ -1536,32 +1493,13 @@ def _iter_convex_subgraphs(
 ) -> Iterator[set[NodeT]]:
     seen: set[frozenset[NodeT]] = set()
     require_positive_outputs = not allow_zero_outputs and max_num_outputs > 0
+    relax_output_seed_limit = alternate_graph is not None
 
-    def emit_with_expansions(subgraph_nodes: set[NodeT]) -> Iterator[set[NodeT]]:
+    def emit_if_new(subgraph_nodes: set[NodeT]) -> Iterator[set[NodeT]]:
         key = frozenset(subgraph_nodes)
-        if key in seen:
-            return
-        seen.add(key)
-        yield subgraph_nodes
-        if not alternate_connected_only or connected_only or max_work > 0:
-            return
-        for expanded in _iter_successor_expansions(
-            graph,
-            alternate_graph,
-            payload,
-            node_order,
-            subgraph_nodes,
-            max_num_inputs=max_num_inputs,
-            max_num_outputs=max_num_outputs,
-            max_subgraph_size=max_subgraph_size,
-            require_positive_outputs=require_positive_outputs,
-            alternate_connected_only=alternate_connected_only,
-        ):
-            expanded_key = frozenset(expanded)
-            if expanded_key in seen:
-                continue
-            seen.add(expanded_key)
-            yield expanded
+        if key not in seen:
+            seen.add(key)
+            yield subgraph_nodes
 
     iterator = iter_all_graph_input(
         payload,
@@ -1571,6 +1509,7 @@ def _iter_convex_subgraphs(
         max_queue_size=max_queue_size,
         connected_only=connected_only,
         max_work=max_work,
+        relax_output_seed_limit=relax_output_seed_limit,
     )
     try:
         for subgraph in iterator:
@@ -1583,7 +1522,7 @@ def _iter_convex_subgraphs(
                 alternate_connected_only=alternate_connected_only,
             ):
                 continue
-            yield from emit_with_expansions(subgraph_nodes)
+            yield from emit_if_new(subgraph_nodes)
     finally:
         iterator.close()
     if iterator.hit_work_limit():
@@ -1617,7 +1556,7 @@ def _iter_convex_subgraphs(
                 alternate_connected_only=alternate_connected_only,
             ):
                 continue
-            yield from emit_with_expansions(subgraph_nodes)
+            yield from emit_if_new(subgraph_nodes)
 
     if allow_zero_outputs:
         iterator = iter_all_graph_input(
@@ -1628,6 +1567,7 @@ def _iter_convex_subgraphs(
             max_queue_size=max_queue_size,
             connected_only=connected_only,
             max_work=max_work,
+            relax_output_seed_limit=relax_output_seed_limit,
         )
         try:
             for subgraph in iterator:
@@ -1638,7 +1578,7 @@ def _iter_convex_subgraphs(
                     alternate_connected_only=alternate_connected_only,
                 ):
                     continue
-                yield from emit_with_expansions(subgraph_nodes)
+                yield from emit_if_new(subgraph_nodes)
         finally:
             iterator.close()
         if iterator.hit_work_limit():

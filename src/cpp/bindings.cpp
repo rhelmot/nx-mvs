@@ -236,7 +236,8 @@ public:
                                int max_subgraph_size,
                                std::size_t max_queue_size,
                                bool connected_only,
-                               std::size_t max_work)
+                               std::size_t max_work,
+                               bool relax_output_seed_limit)
         : graph_(make_graph(input))
         , alternate_graph_(make_alternate_graph(input))
         , max_num_inputs_(max_num_inputs)
@@ -245,6 +246,7 @@ public:
         , max_queue_size_(max_queue_size)
         , connected_only_(connected_only)
         , max_work_(max_work)
+        , relax_output_seed_limit_(relax_output_seed_limit)
     {
         if (max_num_inputs_ < 0 || max_num_outputs_ < 0)
             throw nb::value_error("I/O limits must be non-negative");
@@ -338,7 +340,8 @@ private:
                 true,
                 false,
                 max_work_,
-                &work_limit_hit);
+                &work_limit_hit,
+                relax_output_seed_limit_);
             {
                 std::lock_guard<std::mutex> lock(mutex_);
                 work_limit_hit_ = work_limit_hit;
@@ -364,6 +367,7 @@ private:
     std::size_t max_queue_size_;
     bool connected_only_;
     std::size_t max_work_;
+    bool relax_output_seed_limit_;
     std::deque<std::vector<int>> queue_;
     mutable std::mutex mutex_;
     std::condition_variable cv_;
@@ -690,7 +694,8 @@ std::shared_ptr<ExhaustiveSubgraphIterator> iter_all_graph_input(
     int max_subgraph_size,
     std::size_t max_queue_size,
     bool connected_only,
-    std::size_t max_work)
+    std::size_t max_work,
+    bool relax_output_seed_limit)
 {
     return std::make_shared<ExhaustiveSubgraphIterator>(
         input,
@@ -699,7 +704,8 @@ std::shared_ptr<ExhaustiveSubgraphIterator> iter_all_graph_input(
         max_subgraph_size,
         max_queue_size,
         connected_only,
-        max_work);
+        max_work,
+        relax_output_seed_limit);
 }
 
 }
@@ -758,7 +764,8 @@ NB_MODULE(_native, m)
         nb::arg("max_subgraph_size") = -1,
         nb::arg("max_queue_size") = 128,
         nb::arg("connected_only") = false,
-        nb::arg("max_work") = 0);
+        nb::arg("max_work") = 0,
+        nb::arg("relax_output_seed_limit") = false);
     m.def(
         "sample_zero_output_graph_input",
         &sample_zero_output_graph_input,

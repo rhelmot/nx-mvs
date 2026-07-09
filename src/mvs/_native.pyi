@@ -57,6 +57,7 @@ def iter_all_graph_input(
     max_queue_size: int = 128,
     connected_only: bool = False,
     max_work: int = 0,
+    relax_output_seed_limit: bool = False,
 ) -> ExhaustiveSubgraphIterator: ...
 
 
